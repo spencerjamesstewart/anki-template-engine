@@ -16,7 +16,7 @@ USAGE
         {"type": "suffix", "part": "-emia", "a": "blood condition",
          "decompose": [("-em-", "blood (from *hem/o*)"), ("-ia", "condition")]},
     ]
-    build_deck(cards, "deck.txt", tags=["med-term", "ch1"])
+    build_deck(cards, "deck.txt")
 
 CARD CATEGORIES  (type key -> badge, accent color)
 --------------------------------------------------
@@ -30,7 +30,8 @@ CARD CATEGORIES  (type key -> badge, accent color)
     deconstruction  WORD DECONSTRUCTION   purple  #c4a7e7
     word_building   BUILD A TERM          purple  #c4a7e7
     word_family     WORD FAMILY           teal    #6ecfcf
-    clinical        CLINICAL CONTEXT      coral   #f0776c
+    clinical            CLINICAL CONTEXT      coral   #f0776c
+    structure_function  STRUCTURE ↔ FUNCTION  indigo  #9b8cef
 
 Color = family of cognitive task; the badge label + layout disambiguate types
 that share a color (purple = word-part assembly/disassembly; teal = rules &
@@ -59,6 +60,7 @@ PALETTE = {
     "purple": "#c4a7e7",
     "teal":   "#6ecfcf",
     "pink":   "#e8a0bf",
+    "indigo": "#9b8cef",
 }
 
 # type key -> (BADGE LABEL, palette color name)
@@ -74,6 +76,7 @@ CATEGORIES = {
     "word_building":  ("BUILD A TERM",        "purple"),
     "word_family":    ("WORD FAMILY",         "teal"),
     "clinical":       ("CLINICAL CONTEXT",    "coral"),
+    "structure_function": ("STRUCTURE ↔ FUNCTION", "indigo"),
 }
 
 FONT = "Georgia,serif"
@@ -341,11 +344,12 @@ def _breakdown(parts, accent):
     chip_row = ('<span style="color:' + a + '"> + </span>').join(chips)
     maps = []
     for token, meaning in parts:
-        maps.append(
-            '<span style="color:' + a + ';font-weight:700">\u2022</span> '
-            '<b style="color:' + a + '">' + str(token) + '</b> \u2014 '
-            '<span style="color:' + BODY + '">' + markup(meaning, a) + '</span>'
-        )
+        row = ('<span style="color:' + a + ';font-weight:700">\u2022</span> '
+               '<b style="color:' + a + '">' + str(token) + '</b>')
+        if meaning:
+            row += (' \u2014 <span style="color:' + BODY + '">'
+                    + markup(meaning, a) + '</span>')
+        maps.append(row)
     return (
         '<div style="background:' + BOX + ';border-left:3px solid ' + a + ';'
         'border-radius:6px;padding:12px 14px;margin:10px 0">'
@@ -366,7 +370,8 @@ def _related_line(related, accent):
 
 
 _ABBR = {"u.s.", "e.g.", "i.e.", "etc.", "vs.", "dr.", "mr.", "mrs.", "ms.",
-         "fig.", "no.", "cf.", "al.", "st.", "approx.", "inc.", "ph.d."}
+         "fig.", "no.", "cf.", "al.", "st.", "approx.", "inc.", "ph.d.",
+         "pl.", "sing.", "sp.", "spp."}
 
 
 def split_sentence_lead(text):
@@ -384,7 +389,10 @@ def split_sentence_lead(text):
             prev_word = s[k + 1:i]
             is_initial = len(prev_word) == 1 and prev_word.isalpha()
             next_is_break = (i + 1 >= n) or (s[i + 1] in " \t")
-            if token in _ABBR or is_initial or not next_is_break:
+            inside_markup = s[:i + 1].count("*") % 2 == 1
+            inside_parens = s[:i + 1].count("(") > s[:i + 1].count(")")
+            if (token in _ABBR or is_initial or not next_is_break
+                    or inside_markup or inside_parens):
                 i += 1
                 continue
             return s[:i + 1].strip(), s[i + 1:].strip()
@@ -442,10 +450,24 @@ def card_concept(d):
 
 
 def card_compare(d):
-    """Fields: q, items[(label, desc)...], ex?, note?  |  badge?, color?."""
+    """Fields: q; then ONE of —
+      items[(label, desc)...]  -> each its own mini-box (side-by-side contrast)
+      a (free text) + points[str...]?  -> a lead callout plus an optional
+                                          bulleted list (prose-style comparison)
+    plus optional ex?, note?  |  badge?, color?."""
     a = _accent(d, "compare")
     fr = front(_badge(d, "compare"), a, markup(d["q"], a))
-    parts = [compare_cards(d["items"], a)]
+    parts = []
+    items = d.get("items")
+    if items and all(isinstance(it, (list, tuple)) and len(it) == 2 for it in items):
+        parts.append(compare_cards(items, a))
+    else:
+        if d.get("a"):
+            lead, body = _lead_body(d)
+            parts.append(answer_callout(lead, a, body))
+        pts = d.get("points") or items
+        if pts:
+            parts.append(list_box(pts, a))
     if d.get("ex"):
         parts.append(example_box(d["ex"], a))
     if d.get("note"):
@@ -454,11 +476,14 @@ def card_compare(d):
 
 
 def card_key_list(d):
-    """Fields: q, items[(label, desc) | str ...], ordered?, ex?, note?
-    |  badge?, color?."""
+    """Fields: q, items[(label, desc) | str ...], a? (lead before the list),
+    ordered?, ex?, note?  |  badge?, color?."""
     a = _accent(d, "key_list")
     fr = front(_badge(d, "key_list"), a, markup(d["q"], a))
-    parts = [list_box(d["items"], a, ordered=d.get("ordered", False))]
+    parts = []
+    if d.get("a"):
+        parts.append(answer_callout(d["a"], a))
+    parts.append(list_box(d["items"], a, ordered=d.get("ordered", False)))
     if d.get("ex"):
         parts.append(example_box(d["ex"], a))
     if d.get("note"):
@@ -510,7 +535,7 @@ def card_suffix(d):
 
 def card_deconstruction(d):
     """Fields: term, parts[(token, meaning)...], a? (overall meaning), q?,
-    pron?, note?  |  badge?, color?."""
+    pron?, ex?, note?  |  badge?, color?."""
     a = _accent(d, "deconstruction")
     badge = _badge(d, "deconstruction")
     term = d.get("term", "")
@@ -527,6 +552,8 @@ def card_deconstruction(d):
     parts.append(_breakdown(d["parts"], a))
     if d.get("pron"):
         parts.append(pron_line(d["pron"]))
+    if d.get("ex"):
+        parts.append(example_box(d["ex"], a))
     if d.get("note"):
         parts.append(muted_note(d["note"], a))
     return fr, back("".join(parts))
@@ -597,8 +624,23 @@ def card_clinical(d):
 # ───────────────────────────────────────────────────────────────────────────
 # DISPATCHER & DECK WRITER
 # ───────────────────────────────────────────────────────────────────────────
+def card_structure_function(d):
+    """Fields: q, a, detail?, ex?, note?  |  badge?, color? override.
+    Pairs an anatomical structure with what it does / how it works."""
+    a = _accent(d, "structure_function")
+    fr = front(_badge(d, "structure_function"), a, markup(d["q"], a))
+    lead, body = _lead_body(d)
+    parts = [answer_callout(lead, a, body)]
+    if d.get("ex"):
+        parts.append(example_box(d["ex"], a))
+    if d.get("note"):
+        parts.append(muted_note(d["note"], a))
+    return fr, back("".join(parts))
+
+
 _BUILDERS = {
     "definition":     card_definition,
+    "structure_function": card_structure_function,
     "concept":        card_concept,
     "compare":        card_compare,
     "key_list":       card_key_list,
@@ -629,19 +671,17 @@ def _oneline(s):
     return s
 
 
-def build_deck(cards, output_path, tags=None):
+def build_deck(cards, output_path):
     """Write an Anki tab-separated import file.
 
     Parameters
     ----------
     cards : list[dict]   each has a 'type' key plus that type's fields.
     output_path : str    path for the .txt import file.
-    tags : str | list, optional   applied to every card (list joined by spaces).
+
+    Note: tags are intentionally never written — this deck does not use them.
     """
     lines = ["#separator:tab", "#html:true"]
-    if tags:
-        tagstr = " ".join(str(t) for t in tags) if isinstance(tags, (list, tuple)) else str(tags)
-        lines.append("#tags:" + tagstr)
     for card in cards:
         fr, bk = build_card(card)
         lines.append(_oneline(fr) + "\t" + _oneline(bk))
@@ -764,6 +804,23 @@ SAMPLE_CARDS = [
      "detail": "Breaks down as *gastr/o* (stomach) + *enter/o* (intestines) + "
                "*-itis* (inflammation); *acute* signals rapid onset and a short course.",
      "related": ["N/V (nausea and vomiting)", "Dx (diagnosis)", "enteritis", "dehydration"]},
+
+    {"type": "structure_function",
+     "q": "Describe the *epidermis* and how it is nourished.",
+     "a": "The outermost, entirely cellular layer of the skin, built of "
+          "stratified squamous epithelium. It has no blood vessels of its own, "
+          "so it depends on the underlying *dermis* for nourishment.",
+     "ex": "Oxygen and nutrients seep out of dermal capillaries and up into "
+           "the lower epidermal cells."},
+
+    {"type": "compare",
+     "q": "What is the difference between *ileum* and *ilium*?",
+     "a": "Both are pronounced the same, but have different spellings and meanings:",
+     "points": [
+         "ILEUM (with an *e*) = part of the small intestine (think: *e* for eating)",
+         "ILIUM (with an *i*) = part of the hip bone",
+     ],
+     "note": "They sit in the same general region, making confusion common."},
 ]
 
 
@@ -813,7 +870,7 @@ def _self_check(path):
 if __name__ == "__main__":
     import sys
     out = sys.argv[1] if len(sys.argv) > 1 else "medical_terminology_sample.txt"
-    build_deck(SAMPLE_CARDS, out, tags=["med-term", "ch1", "basic-word-structure"])
+    build_deck(SAMPLE_CARDS, out)
     problems = _self_check(out)
     if problems:
         print("SELF-CHECK FAILED:")
