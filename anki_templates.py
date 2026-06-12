@@ -32,6 +32,10 @@ CARD CATEGORIES  (type key -> badge, accent color)
     word_family     WORD FAMILY           teal    #6ecfcf
     clinical            CLINICAL CONTEXT      coral   #f0776c
     structure_function  STRUCTURE ↔ FUNCTION  indigo  #9b8cef
+    true_false          TRUE / FALSE          slate   #8f9aa6
+
+The true_false badge is deliberately a neutral slate so the front never hints
+at the answer; the back colors itself green (TRUE) or red (FALSE).
 
 Color = family of cognitive task; the badge label + layout disambiguate types
 that share a color (purple = word-part assembly/disassembly; teal = rules &
@@ -61,7 +65,12 @@ PALETTE = {
     "teal":   "#6ecfcf",
     "pink":   "#e8a0bf",
     "indigo": "#9b8cef",
+    "slate":  "#8f9aa6",
 }
+
+# Verdict colors for true_false cards (fixed semantics: green = true, red = false)
+TRUE_COLOR = "#a8d5a2"   # sage green
+FALSE_COLOR = "#f0776c"  # coral red
 
 # type key -> (BADGE LABEL, palette color name)
 CATEGORIES = {
@@ -77,6 +86,7 @@ CATEGORIES = {
     "word_family":    ("WORD FAMILY",         "teal"),
     "clinical":       ("CLINICAL CONTEXT",    "coral"),
     "structure_function": ("STRUCTURE ↔ FUNCTION", "indigo"),
+    "true_false":     ("TRUE / FALSE",        "slate"),
 }
 
 FONT = "Georgia,serif"
@@ -638,6 +648,56 @@ def card_structure_function(d):
     return fr, back("".join(parts))
 
 
+def card_true_false(d):
+    """A trick-resistant true/false card.
+
+    Fields:
+      q        the statement to judge (shown alone on the front).
+      verdict  True or False  (bool, or the string 'true'/'false').
+               'answer' is accepted as an alias.
+      a        the explanation — focus on WHY the other answer is wrong / the
+               subtlety being tested. 'explain' is accepted as an alias.
+      detail?, ex?, note?  optional, as in other builders.
+      badge?, color?       override the FRONT badge only.
+
+    The front uses a neutral slate badge so it never hints at the answer. The
+    back leads with a TRUE (green) or FALSE (red) verdict banner, then a 'Why'
+    explanation colored to match the verdict. Verdict colors are fixed; the
+    per-card 'color' override only affects the front badge."""
+    if "verdict" not in d and "answer" not in d:
+        raise ValueError("true_false card requires a 'verdict' (True/False)")
+
+    front_accent = _accent(d, "true_false")
+    fr = front(_badge(d, "true_false"), front_accent, markup(d["q"], front_accent))
+
+    raw = d.get("verdict", d.get("answer"))
+    if isinstance(raw, str):
+        is_true = raw.strip().lower() in ("true", "t", "yes", "y", "1")
+    else:
+        is_true = bool(raw)
+    vc = TRUE_COLOR if is_true else FALSE_COLOR
+    label = "TRUE" if is_true else "FALSE"
+
+    banner = (
+        '<div style="background:' + BOX + ';border-left:3px solid ' + vc + ';'
+        'border-radius:6px;padding:10px 14px;margin:10px 0">'
+        '<span style="color:' + vc + ';font-weight:700;font-size:1.2em;'
+        'letter-spacing:0.08em">' + label + '</span></div>'
+    )
+    parts = [banner]
+
+    src = d if "a" in d else ({**d, "a": d["explain"]} if d.get("explain") else d)
+    lead, body = _lead_body(src)
+    if lead:
+        parts.append(section_label("Why", vc))
+        parts.append(answer_callout(lead, vc, body))
+    if d.get("ex"):
+        parts.append(example_box(d["ex"], vc))
+    if d.get("note"):
+        parts.append(muted_note(d["note"], vc))
+    return fr, back("".join(parts))
+
+
 _BUILDERS = {
     "definition":     card_definition,
     "structure_function": card_structure_function,
@@ -651,6 +711,7 @@ _BUILDERS = {
     "word_building":  card_word_building,
     "word_family":    card_word_family,
     "clinical":       card_clinical,
+    "true_false":     card_true_false,
 }
 
 
@@ -821,6 +882,19 @@ SAMPLE_CARDS = [
          "ILIUM (with an *i*) = part of the hip bone",
      ],
      "note": "They sit in the same general region, making confusion common."},
+
+    {"type": "true_false",
+     "q": "A *symptom* is an objective finding observed by the examiner.",
+     "verdict": False,
+     "a": "That describes a *sign*. A *symptom* is subjective — it is what the "
+          "patient feels and reports (pain, fatigue, nausea), not what the "
+          "examiner measures (fever, rash, hyperglycemia)."},
+
+    {"type": "true_false",
+     "q": "*Tachycardia* describes a fast heart rate.",
+     "verdict": True,
+     "a": "*tachy-* = fast. The trap is the look-alike *brady-* (slow): "
+          "bradycardia is a pulse under 60, tachycardia is over 100."},
 ]
 
 
