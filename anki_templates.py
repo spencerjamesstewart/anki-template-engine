@@ -33,6 +33,7 @@ CARD CATEGORIES  (type key -> badge, accent color)
     clinical            CLINICAL CONTEXT      coral   #f0776c
     structure_function  STRUCTURE ↔ FUNCTION  indigo  #9b8cef
     true_false          TRUE / FALSE          slate   #8f9aa6
+    drug_name           DRUG NAME             gold    #e8c170
 
 The true_false badge is deliberately a neutral slate so the front never hints
 at the answer; the back colors itself green (TRUE) or red (FALSE).
@@ -87,6 +88,7 @@ CATEGORIES = {
     "clinical":       ("CLINICAL CONTEXT",    "coral"),
     "structure_function": ("STRUCTURE ↔ FUNCTION", "indigo"),
     "true_false":     ("TRUE / FALSE",        "slate"),
+    "drug_name":      ("DRUG NAME",           "gold"),
 }
 
 FONT = "Georgia,serif"
@@ -698,6 +700,22 @@ def card_true_false(d):
     return fr, back("".join(parts))
 
 
+def card_drug_name(d):
+    """Brand ⇄ generic drug-name recall card.
+    Fields: q (the name shown + which name is wanted), a (the answer name),
+    detail?, ex?, note? (drug class / main use)  |  badge?, color? override.
+    Behaves like a definition card but carries the DRUG NAME badge (gold)."""
+    a = _accent(d, "drug_name")
+    fr = front(_badge(d, "drug_name"), a, markup(d["q"], a))
+    lead, body = _lead_body(d)
+    parts = [answer_callout(lead, a, body)]
+    if d.get("ex"):
+        parts.append(example_box(d["ex"], a))
+    if d.get("note"):
+        parts.append(muted_note(d["note"], a))
+    return fr, back("".join(parts))
+
+
 _BUILDERS = {
     "definition":     card_definition,
     "structure_function": card_structure_function,
@@ -712,6 +730,7 @@ _BUILDERS = {
     "word_family":    card_word_family,
     "clinical":       card_clinical,
     "true_false":     card_true_false,
+    "drug_name":      card_drug_name,
 }
 
 
@@ -756,6 +775,11 @@ def build_deck(cards, output_path):
 # SAMPLE DECK + SELF-CHECKS  (run:  python3 anki_templates.py [out.txt])
 # ───────────────────────────────────────────────────────────────────────────
 SAMPLE_CARDS = [
+    {"type": "drug_name",
+     "q": "Brand (proprietary) name for *albuterol*?",
+     "a": "Ventolin",
+     "note": "Selective *beta-2 agonist* — a bronchodilator."},
+
     {"type": "definition",
      "q": "What is *cytology*?",
      "a": "The study of cells.",
