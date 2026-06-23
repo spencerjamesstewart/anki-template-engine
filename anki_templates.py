@@ -67,6 +67,7 @@ PALETTE = {
     "pink":   "#e8a0bf",
     "indigo": "#9b8cef",
     "slate":  "#8f9aa6",
+    "rose":   "#e0728c",
 }
 
 # Verdict colors for true_false cards (fixed semantics: green = true, red = false)
@@ -79,6 +80,10 @@ CATEGORIES = {
     "concept":        ("CONCEPT",             "teal"),
     "compare":        ("COMPARE & CONTRAST",  "coral"),
     "key_list":       ("KEY LIST",            "sage"),
+    "argument":       ("ARGUMENT",            "indigo"),
+    "position":       ("POSITION",            "gold"),
+    "objection":      ("OBJECTION & REPLY",   "rose"),
+    "distinction":    ("DISTINCTION",         "purple"),
     "combining_form": ("COMBINING FORM",      "purple"),
     "prefix":         ("PREFIX",              "pink"),
     "suffix":         ("SUFFIX",              "gold"),
@@ -716,12 +721,151 @@ def card_drug_name(d):
     return fr, back("".join(parts))
 
 
+# ── PHILOSOPHY / ETHICS BUILDERS ───────────────────────────────────────────
+def card_argument(d):
+    """Reconstruct an argument as numbered premises leading to a conclusion.
+    Fields: q (prompt), premises[str | (label, text) ...], conclusion,
+    ex?, note?  |  badge?, color? override.
+    Premises render as an accent-numbered list; the conclusion sits in its own
+    box prefixed with the 'therefore' sign (∴). Use (label, text) tuples to
+    supply custom premise labels like '(1)' or 'P1'."""
+    a = _accent(d, "argument")
+    fr = front(_badge(d, "argument"), a, markup(d["q"], a))
+    rows = []
+    for i, p in enumerate(d["premises"], 1):
+        if isinstance(p, (list, tuple)) and len(p) == 2:
+            label, text = p
+            rows.append('<span style="color:' + a + ';font-weight:700">'
+                        + str(label) + '</span> '
+                        '<span style="color:' + BODY + '">' + markup(text, a)
+                        + '</span>')
+        else:
+            rows.append('<span style="color:' + a + ';font-weight:700">'
+                        + str(i) + '.</span> '
+                        '<span style="color:' + BODY + '">' + markup(p, a)
+                        + '</span>')
+    parts = [section_label("Premises", a), callout("<br>".join(rows), a)]
+    parts.append(section_label("Conclusion", a))
+    parts.append(callout(
+        '<span style="color:' + a + ';font-weight:700;font-size:1.15em">'
+        '∴ </span><span style="color:' + a + ';font-weight:600">'
+        + markup(d["conclusion"], a) + '</span>', a))
+    if d.get("ex"):
+        parts.append(example_box(d["ex"], a))
+    if d.get("note"):
+        parts.append(muted_note(d["note"], a))
+    return fr, back("".join(parts))
+
+
+def card_position(d):
+    """Attribute a view to a named thinker, with optional grounds.
+    Fields: thinker, topic? (or q? override for the front), a (the view),
+    detail? (grounds/reasoning), ex?, note?  |  badge?, color? override.
+    Reads like a concept card but is tagged with a 'who' and closes with a
+    right-aligned attribution line."""
+    a = _accent(d, "position")
+    badge = _badge(d, "position")
+    thinker = d.get("thinker", "")
+    if d.get("q"):
+        q_inner = markup(d["q"], a)
+    else:
+        who = '<b style="color:' + a + '">' + str(thinker) + '</b>'
+        topic = d.get("topic")
+        if topic:
+            q_inner = "What is " + who + "'s position on " + markup(topic, a) + "?"
+        else:
+            q_inner = "What is " + who + "'s position?"
+    fr = front(badge, a, q_inner)
+    lead, body = _lead_body(d)
+    parts = [answer_callout(lead, a, body)]
+    if d.get("ex"):
+        parts.append(example_box(d["ex"], a))
+    if thinker:
+        parts.append('<div style="text-align:right;color:' + MUTED
+                     + ';font-style:italic;font-size:0.85em;margin-top:6px">'
+                     '— ' + str(thinker) + '</div>')
+    if d.get("note"):
+        parts.append(muted_note(d["note"], a))
+    return fr, back("".join(parts))
+
+
+def card_objection(d):
+    """A claim, the objection raised against it, and the reply (dialectic).
+    Fields: claim (or q? override for the front), objection, reply?, ex?, note?
+    |  badge?, color? override.
+    The objection renders in the card accent (tension); the reply in sage
+    (green) to mark resolution. If you pass a custom q AND a claim, the claim
+    is also restated in a box on the back."""
+    a = _accent(d, "objection")
+    badge = _badge(d, "objection")
+    if d.get("q"):
+        q_inner = markup(d["q"], a)
+    else:
+        claim = d.get("claim", "")
+        q_inner = ('Consider the claim:<br>'
+                   '<i style="color:' + a + '">' + markup(claim, a) + '</i><br>'
+                   'What objection arises, and how might it be answered?')
+    fr = front(badge, a, q_inner)
+    parts = []
+    if d.get("q") and d.get("claim"):
+        parts.append(section_label("Claim", a))
+        parts.append(callout('<span style="color:' + BODY + '">'
+                             + markup(d["claim"], a) + '</span>', a))
+    parts.append(section_label("Objection", a))
+    parts.append(callout('<span style="color:' + BODY + '">'
+                         + markup(d["objection"], a) + '</span>', a))
+    if d.get("reply"):
+        g = PALETTE["sage"]
+        parts.append(section_label("Reply", g))
+        parts.append(callout('<span style="color:' + BODY + '">'
+                             + markup(d["reply"], g) + '</span>', g))
+    if d.get("ex"):
+        parts.append(example_box(d["ex"], a))
+    if d.get("note"):
+        parts.append(muted_note(d["note"], a))
+    return fr, back("".join(parts))
+
+
+def card_distinction(d):
+    """Pin down the criterion separating two (or more) confused concepts.
+    Fields: between (TermA, TermB) for an auto front, or q? override;
+    criterion? (the dividing line, shown as the lead); items[(label, desc)...]
+    (one mini-box per side); ex?, note?  |  badge?, color? override.
+    Differs from 'compare' by foregrounding the single dividing criterion."""
+    a = _accent(d, "distinction")
+    badge = _badge(d, "distinction")
+    if d.get("q"):
+        q_inner = markup(d["q"], a)
+    elif d.get("between"):
+        joined = ('</b> vs <b style="color:' + a + '">').join(
+            str(t) for t in d["between"])
+        q_inner = 'Distinguish <b style="color:' + a + '">' + joined + '</b>.'
+    else:
+        q_inner = markup(d.get("a", ""), a)
+    fr = front(badge, a, q_inner)
+    parts = []
+    if d.get("criterion"):
+        parts.append(section_label("Dividing line", a))
+        parts.append(answer_callout(d["criterion"], a))
+    if d.get("items"):
+        parts.append(compare_cards(d["items"], a))
+    if d.get("ex"):
+        parts.append(example_box(d["ex"], a))
+    if d.get("note"):
+        parts.append(muted_note(d["note"], a))
+    return fr, back("".join(parts))
+
+
 _BUILDERS = {
     "definition":     card_definition,
     "structure_function": card_structure_function,
     "concept":        card_concept,
     "compare":        card_compare,
     "key_list":       card_key_list,
+    "argument":       card_argument,
+    "position":       card_position,
+    "objection":      card_objection,
+    "distinction":    card_distinction,
     "combining_form": card_combining_form,
     "prefix":         card_prefix,
     "suffix":         card_suffix,
