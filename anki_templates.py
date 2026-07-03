@@ -1,9 +1,10 @@
 """
-Anki Flashcard Template Engine — Medical Terminology
-====================================================
-Generate styled, dark-mode-friendly HTML flashcards from MINIMAL content input.
-You pass ~200 chars of content per card; this module emits the ~1,000+ chars of
-repeated HTML. Cards render in Anki with "HTML enabled" in dark mode.
+Anki Flashcard Template Engine
+==============================
+Generate styled, dark-mode-friendly HTML flashcards from MINIMAL content input,
+for any subject. You pass ~200 chars of content per card; this module emits the
+~1,000+ chars of repeated HTML. Cards render in Anki with "HTML enabled" in
+dark mode.
 
 USAGE
 -----
@@ -18,22 +19,10 @@ USAGE
     ]
     build_deck(cards, "deck.txt")
 
-CARD CATEGORIES  (type key -> badge, accent color)
---------------------------------------------------
-    definition      DEFINITION            sky     #7ec8e3
-    concept         CONCEPT               teal    #6ecfcf
-    compare         COMPARE & CONTRAST    coral   #f0776c
-    key_list        KEY LIST              sage    #a8d5a2
-    combining_form  COMBINING FORM        purple  #c4a7e7
-    prefix          PREFIX                pink    #e8a0bf
-    suffix          SUFFIX                gold    #e8c170
-    deconstruction  WORD DECONSTRUCTION   purple  #c4a7e7
-    word_building   BUILD A TERM          purple  #c4a7e7
-    word_family     WORD FAMILY           teal    #6ecfcf
-    clinical            CLINICAL CONTEXT      coral   #f0776c
-    structure_function  STRUCTURE ↔ FUNCTION  indigo  #9b8cef
-    true_false          TRUE / FALSE          slate   #8f9aa6
-    drug_name           DRUG NAME             gold    #e8c170
+CARD CATEGORIES
+---------------
+The CATEGORIES dict below is the source of truth for card types (badge label +
+accent color); list them with:  python3 anki_templates.py --list-types
 
 The true_false badge is deliberately a neutral slate so the front never hints
 at the answer; the back colors itself green (TRUE) or red (FALSE).
@@ -1066,7 +1055,9 @@ SAMPLE_CARDS = [
 ]
 
 
-def _self_check(path):
+def validate_deck(path, expected_cards=None):
+    """Validate a generated deck file. Returns a list of problems (empty = pass).
+    expected_cards: optional card count to assert (used by the sample path)."""
     text = open(path, encoding="utf-8").read()
     lines = text.split("\n")
     body = [l for l in lines if l and not l.startswith("#")]
@@ -1077,8 +1068,8 @@ def _self_check(path):
     if lines[1] != "#html:true":
         fails.append("second line is not '#html:true'")
 
-    if len(body) != len(SAMPLE_CARDS):
-        fails.append("expected %d card lines, got %d" % (len(SAMPLE_CARDS), len(body)))
+    if expected_cards is not None and len(body) != expected_cards:
+        fails.append("expected %d card lines, got %d" % (expected_cards, len(body)))
 
     for i, l in enumerate(body, 1):
         if l.count("\t") != 1:
@@ -1102,6 +1093,8 @@ def _self_check(path):
             fails.append("unbalanced <%s>: %d open vs %d close" % (tag, opens, closes))
 
     for i, l in enumerate(body, 1):
+        if "\t" not in l:
+            continue  # missing tab already reported by the tab-count check
         back_html = l.split("\t", 1)[1]
         if "border-left:3px solid" not in back_html:
             fails.append("card %d back is not inside a callout box" % i)
@@ -1109,16 +1102,54 @@ def _self_check(path):
     return fails
 
 
-if __name__ == "__main__":
+# Backwards-compatible alias (pre-CLI name).
+_self_check = validate_deck
+
+
+def _run_sample(out):
+    """Build the sample deck and self-check it. Returns an exit code."""
     import sys
-    out = sys.argv[1] if len(sys.argv) > 1 else "medical_terminology_sample.txt"
     build_deck(SAMPLE_CARDS, out)
-    problems = _self_check(out)
+    problems = validate_deck(out, expected_cards=len(SAMPLE_CARDS))
     if problems:
         print("SELF-CHECK FAILED:")
         for p in problems:
             print("  -", p)
-        sys.exit(1)
+        return 1
     print("Self-checks passed: %d categories, tab-separated, headers OK, "
           "no trailing ';', no <br><br>, hex 6/8 only, balanced tags, "
           "every answer boxed." % len(SAMPLE_CARDS))
+    return 0
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Anki template engine: build the sample deck, "
+                    "validate a deck file, or list card types.")
+    parser.add_argument("output", nargs="?", default="medical_terminology_sample.txt",
+                        help="output path for the sample deck (default: %(default)s)")
+    parser.add_argument("--validate", metavar="PATH",
+                        help="validate an existing deck file and exit")
+    parser.add_argument("--list-types", action="store_true",
+                        help="print the available card types, one per line")
+    args = parser.parse_args()
+
+    if args.list_types:
+        for key in CATEGORIES:
+            print(key)
+        sys.exit(0)
+
+    if args.validate:
+        problems = validate_deck(args.validate)
+        if problems:
+            print("VALIDATION FAILED: %s" % args.validate)
+            for p in problems:
+                print("  -", p)
+            sys.exit(1)
+        print("Validation passed: %s" % args.validate)
+        sys.exit(0)
+
+    sys.exit(_run_sample(args.output))
