@@ -15,6 +15,7 @@ always run the latest pushed version.
 
 ```
 ./run.sh update              # fast-forward pull (fails loudly if dirty/diverged)
+./run.sh gen <driver.py>     # pull, run a batch driver, validate every deck it wrote
 ./run.sh sample              # build the sample deck + self-check (smoke test)
 ./run.sh validate <deck.txt> # validate a generated deck file
 ```

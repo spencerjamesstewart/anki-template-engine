@@ -24,6 +24,8 @@ The engine emits a tab-separated .txt with `#separator:tab` and `#html:true` hea
 
 Write every generated batch to the project's `outbox/` folder, inside a date-prefixed batch folder (e.g. `outbox/2026-07-03-resp-meds/`). Never write generated files anywhere else, and never read `outbox/` contents as context. Batches are ephemeral: once imported into Anki, the batch folder is deleted.
 
+Generate a batch by authoring a driver script (a small Python file that builds the card list and calls `build_deck`) in the batch folder and running `./run.sh gen <driver>` — never by invoking the engine or the driver directly.
+
 ### Content conventions
 
 - Atomicity: one gradeable idea per card — if you can't judge your recall as right or wrong in one beat, split the card. Depth should come from a sharper question, not from stacking several facts into one answer.
