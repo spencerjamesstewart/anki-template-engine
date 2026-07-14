@@ -1,9 +1,9 @@
 #!/bin/bash
-# Entry point for Cowork sessions. Subcommands: update | gen <driver.py> | validate <deck.txt> | sample
+# Entry point for Cowork sessions. Subcommands: gen <driver.py> | validate <deck.txt> | sample
 set -euo pipefail
 
 # Remember where the caller invoked us from: relative arguments (driver paths)
-# must be resolved against it, because we immediately cd to the repo for git.
+# are resolved against the caller's directory because we cd to the repo root.
 caller_pwd="$PWD"
 cd "$(dirname "$0")"
 
@@ -12,32 +12,19 @@ usage() {
 Usage: ./run.sh <subcommand>
 
 Subcommands:
-  update              Pull the latest pushed version (fast-forward only).
-  gen <driver.py>     Update, run a batch driver, validate every deck it wrote.
+  gen <driver.py>     Run a batch driver, validate every deck it wrote.
   validate <deck.txt> Validate a generated deck file.
   sample              Build the sample deck and self-check it.
   -h, --help          Show this help.
-EOF
-}
 
-do_update() {
-    echo "Updating clone in $(pwd) (git pull --ff-only)..."
-    if [ -n "$(git status --porcelain)" ]; then
-        echo "ERROR: clone is dirty — fix manually (this clone must stay a read-only deployment)." >&2
-        exit 1
-    fi
-    if ! git pull --ff-only; then
-        echo "ERROR: clone has diverged from the remote — fix manually." >&2
-        exit 1
-    fi
+Driver and deck paths are resolved against the directory the script was
+invoked from, not the repo.
+EOF
 }
 
 cmd="${1:-}"
 
 case "$cmd" in
-    update)
-        do_update
-        ;;
     gen)
         if [ $# -lt 2 ]; then
             echo "ERROR: gen needs a driver script: ./run.sh gen <driver.py>" >&2
@@ -55,8 +42,6 @@ case "$cmd" in
         driver_dir="$(cd "$(dirname "$driver")" && pwd)"
         driver="$driver_dir/$(basename "$driver")"
         repo_root="$(pwd)"
-
-        do_update
 
         echo "Running driver $driver..."
         driver_out="$(mktemp)"

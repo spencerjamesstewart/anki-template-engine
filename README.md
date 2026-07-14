@@ -7,22 +7,18 @@ header. Every card must carry at least one tag (the subject); pass deck-wide
 tags via `build_deck(cards, "deck.txt", tags=["rust", "unit-5-exam"])`,
 merged with any per-card tags.
 
-## Deployment model
-
-Development happens elsewhere (Claude Code) and is pushed here. A single
-canonical clone lives at `~/Documents/Claude/Projects/_tools/<repo-name>/` and
-is attached to each Cowork project as an additional folder. That clone is a
-read-only deployment: it only ever pulls, via `./run.sh update`, and must
-always run the latest pushed version.
-
 ## Usage
 
 ```
-./run.sh update              # fast-forward pull (fails loudly if dirty/diverged)
-./run.sh gen <driver.py>     # pull, run a batch driver, validate every deck it wrote
+./run.sh gen <driver.py>     # run a batch driver, validate every deck it wrote
 ./run.sh sample              # build the sample deck + self-check (smoke test)
 ./run.sh validate <deck.txt> # validate a generated deck file
 ```
+
+Drivers, source material, and generated decks live outside the repo. Paths
+passed to `run.sh` resolve against the invoking directory, and the driver
+runs in its own directory so relative output paths land next to it — nothing
+is written into the repo.
 
 Direct engine access:
 
