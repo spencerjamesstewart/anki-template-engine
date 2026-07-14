@@ -11,13 +11,17 @@ USAGE
     from anki_templates import build_deck
 
     cards = [
-        {"type": "definition", "q": "What is *cytology*?",
-         "a": "The study of cells.",
-         "detail": "From *cyt/o* (cell) + *-logy* (study of)."},
-        {"type": "suffix", "part": "-emia", "a": "blood condition",
-         "decompose": [("-em-", "blood (from *hem/o*)"), ("-ia", "condition")]},
+        {"type": "definition", "q": "What is *igneous rock*?",
+         "a": "Rock formed from cooled, solidified magma or lava.",
+         "tags": "geology"},
+        {"type": "suffix", "part": "-ology", "a": "the study of",
+         "decompose": [("-log-", "word, reason (from Greek *logos*)"), ("-y", "noun-forming suffix")],
+         "tags": "etymology"},
     ]
-    build_deck(cards, "deck.txt")
+    build_deck(cards, "deck.txt", tags=["sample"])
+
+Tags are required: every card must end up with at least one tag, either
+per-card or via the deck-wide `tags=` argument to `build_deck`.
 
 CARD CATEGORIES
 ---------------
@@ -79,10 +83,10 @@ CATEGORIES = {
     "deconstruction": ("WORD DECONSTRUCTION", "purple"),
     "word_building":  ("BUILD A TERM",        "purple"),
     "word_family":    ("WORD FAMILY",         "teal"),
-    "clinical":       ("CLINICAL CONTEXT",    "coral"),
+    "in_context":     ("IN CONTEXT",          "coral"),
     "structure_function": ("STRUCTURE ↔ FUNCTION", "indigo"),
     "true_false":     ("TRUE / FALSE",        "slate"),
-    "drug_name":      ("DRUG NAME",           "gold"),
+    "alias":          ("ALIAS",               "gold"),
 }
 
 FONT = "Georgia,serif"
@@ -602,19 +606,19 @@ def card_word_family(d):
     return fr, back("".join(parts))
 
 
-def card_clinical(d):
-    """Fields: q, a (interpretation), detail?, chart? (chart-note text),
+def card_in_context(d):
+    """Fields: q, a (interpretation), detail?, excerpt? (excerpt text),
     related?, ex?, note?  |  badge?, color?."""
-    a = _accent(d, "clinical")
-    badge = _badge(d, "clinical")
+    a = _accent(d, "in_context")
+    badge = _badge(d, "in_context")
     fr = front(badge, a, markup(d["q"], a))
     parts = []
-    if d.get("chart"):
+    if d.get("excerpt"):
         parts.append(
-            section_label("Chart note", a)
+            section_label("Excerpt", a)
             + '<div style="background:' + BOX + ';border-left:3px solid ' + a + '40;'
             'border-radius:6px;padding:10px 12px;margin:6px 0;color:' + BODY + ';'
-            'font-style:italic;font-size:0.95em">' + markup(d["chart"], a) + '</div>'
+            'font-style:italic;font-size:0.95em">' + markup(d["excerpt"], a) + '</div>'
         )
     lead, body = _lead_body(d)
     parts.append(answer_callout(lead, a, body))
@@ -694,13 +698,13 @@ def card_true_false(d):
     return fr, back("".join(parts))
 
 
-def card_drug_name(d):
-    """Brand ⇄ generic drug-name recall card.
+def card_alias(d):
+    """Two names for one thing (generic/brand, common/scientific, symbol/name).
     Fields: q (the name shown + which name is wanted), a (the answer name),
-    detail?, ex?, note? (drug class / main use)  |  badge?, color? override.
-    Behaves like a definition card but carries the DRUG NAME badge (gold)."""
-    a = _accent(d, "drug_name")
-    fr = front(_badge(d, "drug_name"), a, markup(d["q"], a))
+    detail?, ex?, note? (extra context)  |  badge?, color? override.
+    Behaves like a definition card but carries the ALIAS badge (gold)."""
+    a = _accent(d, "alias")
+    fr = front(_badge(d, "alias"), a, markup(d["q"], a))
     lead, body = _lead_body(d)
     parts = [answer_callout(lead, a, body)]
     if d.get("ex"):
@@ -861,9 +865,9 @@ _BUILDERS = {
     "deconstruction": card_deconstruction,
     "word_building":  card_word_building,
     "word_family":    card_word_family,
-    "clinical":       card_clinical,
+    "in_context":     card_in_context,
     "true_false":     card_true_false,
-    "drug_name":      card_drug_name,
+    "alias":          card_alias,
 }
 
 
@@ -884,20 +888,63 @@ def _oneline(s):
     return s
 
 
-def build_deck(cards, output_path):
+def _normalize_tags(value):
+    """Normalize a tags value (list of strings, or a single space-separated
+    string) into a list of strings. Raises ValueError if any tag has
+    internal whitespace."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw = value.split()
+    else:
+        raw = list(value)
+    out = []
+    for t in raw:
+        t = str(t)
+        if any(c.isspace() for c in t):
+            raise ValueError("tag %r contains whitespace" % t)
+        out.append(t.lower())
+    return out
+
+
+def _merge_tags(deck_tags, card_tags):
+    """Merge deck-wide tags (first) with per-card tags, deduping while
+    preserving first-seen order."""
+    merged = []
+    seen = set()
+    for t in deck_tags + card_tags:
+        if t not in seen:
+            seen.add(t)
+            merged.append(t)
+    return merged
+
+
+def build_deck(cards, output_path, tags=None):
     """Write an Anki tab-separated import file.
 
     Parameters
     ----------
-    cards : list[dict]   each has a 'type' key plus that type's fields.
+    cards : list[dict]   each has a 'type' key plus that type's fields, and
+                          may have an optional 'tags' key (list of strings,
+                          or a single space-separated string).
     output_path : str    path for the .txt import file.
+    tags : list[str] | str, optional
+                          deck-wide tags applied to every card, merged with
+                          any per-card tags.
 
-    Note: tags are intentionally never written — this deck does not use them.
+    Every card must end up with at least one tag (deck-wide and/or
+    per-card); tags may not contain whitespace and are lowercased.
     """
-    lines = ["#separator:tab", "#html:true"]
+    deck_tags = _normalize_tags(tags)
+    lines = ["#separator:tab", "#html:true", "#tags column:3"]
     for card in cards:
         fr, bk = build_card(card)
-        lines.append(_oneline(fr) + "\t" + _oneline(bk))
+        card_tags = _normalize_tags(card.get("tags"))
+        merged = _merge_tags(deck_tags, card_tags)
+        if not merged:
+            raise ValueError("card of type %r has no tags (deck-wide or "
+                             "per-card tags required)" % card.get("type"))
+        lines.append(_oneline(fr) + "\t" + _oneline(bk) + "\t" + " ".join(merged))
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     print("Generated %d cards -> %s" % (len(cards), output_path))
@@ -908,150 +955,187 @@ def build_deck(cards, output_path):
 # SAMPLE DECK + SELF-CHECKS  (run:  python3 anki_templates.py [out.txt])
 # ───────────────────────────────────────────────────────────────────────────
 SAMPLE_CARDS = [
-    {"type": "drug_name",
-     "q": "Brand (proprietary) name for *albuterol*?",
-     "a": "Ventolin",
-     "note": "Selective *beta-2 agonist* — a bronchodilator."},
-
     {"type": "definition",
-     "q": "What is *cytology*?",
-     "a": "The study of cells.",
-     "detail": "From *cyt/o* (cell) + *-logy* (study of). It examines the "
-               "structure, function, and formation of cells.",
-     "ex": "A *cytologist* examines a Pap smear to detect abnormal cervical cells."},
-
-    {"type": "concept",
-     "q": "When is the combining vowel *o* kept, and when is it dropped?",
-     "a": "Keep the combining vowel before a suffix that begins with a "
-          "consonant; drop it before a suffix that begins with a vowel.",
-     "ex": [
-         "gastr/o + -scopy \u2192 gastroscopy (suffix starts with a consonant \u2192 keep o)",
-         "gastr/o + -itis \u2192 gastritis (suffix starts with a vowel \u2192 drop o)",
-         "Note: the combining vowel is always kept between two roots, even when "
-         "the second root begins with a vowel.",
-     ]},
-
-    {"type": "compare",
-     "q": "Distinguish the surgical suffixes *-ectomy*, *-otomy*, and *-ostomy*.",
-     "items": [
-         ("-ectomy", "excision \u2014 surgical *removal* of an organ or part (e.g. *appendectomy*)."),
-         ("-otomy", "incision \u2014 *cutting into*; a temporary opening (e.g. *laparotomy*)."),
-         ("-ostomy", "creation of a new, *permanent* opening, or *stoma* (e.g. *colostomy*)."),
-     ],
-     "note": "Hook: -ectomy = takE it out, -Otomy = Open (cut into), "
-             "-ostomy = an Opening that stays."},
-
-    {"type": "key_list",
-     "q": "What are the four building blocks of a medical term?",
-     "items": [
-         ("Word root", "the foundation that carries the core meaning (e.g. *cardi* = heart)."),
-         ("Combining vowel", "usually *o*; links a root to another root or to a suffix."),
-         ("Suffix", "the word ending that modifies the meaning (e.g. *-itis* = inflammation)."),
-         ("Prefix", "an element at the beginning that modifies the meaning (e.g. *peri-* = surrounding)."),
-     ],
-     "note": "A word root plus its combining vowel (e.g. *cardi/o*) is called a *combining form*."},
+     "q": "What is *igneous rock*?",
+     "a": "Rock formed by the cooling and solidification of magma or lava.",
+     "detail": "Classified as *intrusive* (cooled slowly underground, "
+               "coarse-grained, e.g. granite) or *extrusive* (cooled quickly "
+               "at the surface, fine-grained, e.g. basalt).",
+     "ex": "Obsidian is extrusive igneous rock that cooled so fast it formed "
+           "volcanic glass instead of crystals.",
+     "tags": "geology"},
 
     {"type": "combining_form",
-     "part": "cardi/o",
-     "a": "heart",
-     "pron": "/KAR-dee-oh/",
+     "part": "chron/o",
+     "a": "time",
+     "pron": "/KRON-oh/",
      "ex": [
-         "cardi/o + -logy \u2192 cardiology (study of the heart)",
-         "cardi/o + -megaly \u2192 cardiomegaly (enlargement of the heart)",
-         "peri- + cardi/o + -um \u2192 pericardium (membrane surrounding the heart)",
+         "chron/o + -logy → chronology (the study or record of events in time)",
+         "syn- + chron/o + -ous → synchronous (happening at the same time)",
      ],
-     "related": ["cardiac", "myocardium", "tachycardia", "bradycardia"]},
+     "related": ["chronic", "anachronism"],
+     "tags": "etymology"},
+
+    {"type": "concept",
+     "q": "How do you find the relative minor of a major key?",
+     "a": "Count down three semitones (a minor third) from the major key's "
+          "tonic; that note is the tonic of its relative minor.",
+     "ex": "C major's relative minor is A minor — both share the same "
+           "key signature (no sharps or flats).",
+     "tags": "music-theory"},
 
     {"type": "prefix",
-     "part": "peri-",
-     "a": "surrounding, around",
+     "part": "sub-",
+     "a": "under, below",
      "ex": [
-         "peri- + cardi/o + -um \u2192 pericardium (membrane surrounding the heart)",
-         "peri- + oste/o + -um \u2192 periosteum (membrane around a bone)",
+         "sub- + marine → submarine (under the sea)",
+         "sub- + terranean → subterranean (underground)",
      ],
-     "note": "Contrast with *endo-* (within) and *epi-* (above, upon)."},
-
-    {"type": "suffix",
-     "part": "-emia",
-     "a": "blood condition",
-     "decompose": [("-em-", "blood (from *hem/o*)"), ("-ia", "condition, state")],
-     "ex": [
-         "leuk/o + -emia \u2192 leukemia (cancerous increase in white blood cells)",
-         "an- + -emia \u2192 anemia (deficiency of red blood cells)",
-         "hyper- + glyc/o + -emia \u2192 hyperglycemia (high blood sugar)",
-     ],
-     "note": "*-emia* decomposes into the root *-em-* (blood) plus the base "
-             "suffix *-ia* (condition)."},
-
-    {"type": "deconstruction",
-     "term": "electrocardiogram",
-     "a": "A record of the electrical activity of the heart.",
-     "parts": [
-         ("electr/o", "electricity"),
-         ("cardi/o", "heart"),
-         ("-gram", "record (written or recorded image)"),
-     ],
-     "pron": "/eh-lek-troh-KAR-dee-oh-gram/",
-     "note": "Commonly abbreviated *ECG* (or *EKG*, from the German *Elektrokardiogramm*)."},
-
-    {"type": "word_building",
-     "clue": "inflammation of the stomach",
-     "term": "gastritis",
-     "pron": "/gas-TRY-tis/",
-     "parts": [("gastr", "stomach"), ("-itis", "inflammation")],
-     "note": "The combining vowel *o* is dropped because the suffix *-itis* "
-             "begins with a vowel."},
-
-    {"type": "word_family",
-     "root": "gastr/o",
-     "members": [
-         ("gastritis", "inflammation of the stomach"),
-         ("gastrectomy", "surgical removal of all or part of the stomach"),
-         ("gastroenterology", "study of the stomach and intestines"),
-         ("gastromegaly", "enlargement of the stomach"),
-         ("epigastric", "pertaining to the region above the stomach"),
-     ],
-     "note": "*gastr/o* = stomach; combine it with parts you know \u2014 "
-             "*-itis*, *-ectomy*, *-logy*."},
-
-    {"type": "clinical",
-     "q": "A chart note reads *acute gastroenteritis*. What does it describe, "
-          "and how does the term break down?",
-     "chart": "Pt presents with N/V and diarrhea x2 days. Dx: acute gastroenteritis.",
-     "a": "Sudden-onset inflammation of the stomach and intestines.",
-     "detail": "Breaks down as *gastr/o* (stomach) + *enter/o* (intestines) + "
-               "*-itis* (inflammation); *acute* signals rapid onset and a short course.",
-     "related": ["N/V (nausea and vomiting)", "Dx (diagnosis)", "enteritis", "dehydration"]},
-
-    {"type": "structure_function",
-     "q": "Describe the *epidermis* and how it is nourished.",
-     "a": "The outermost, entirely cellular layer of the skin, built of "
-          "stratified squamous epithelium. It has no blood vessels of its own, "
-          "so it depends on the underlying *dermis* for nourishment.",
-     "ex": "Oxygen and nutrients seep out of dermal capillaries and up into "
-           "the lower epidermal cells."},
+     "note": "Contrast with *super-* (above, over).",
+     "tags": "etymology"},
 
     {"type": "compare",
-     "q": "What is the difference between *ileum* and *ilium*?",
-     "a": "Both are pronounced the same, but have different spellings and meanings:",
-     "points": [
-         "ILEUM (with an *e*) = part of the small intestine (think: *e* for eating)",
-         "ILIUM (with an *i*) = part of the hip bone",
+     "q": "Distinguish *ionic* and *covalent* bonds.",
+     "items": [
+         ("Ionic bond", "electrons are *transferred* from one atom to "
+                        "another, creating oppositely charged ions that "
+                        "attract (e.g. NaCl)."),
+         ("Covalent bond", "electrons are *shared* between atoms (e.g. H2O)."),
      ],
-     "note": "They sit in the same general region, making confusion common."},
+     "note": "Ionic bonds typically form between a metal and a nonmetal; "
+             "covalent bonds typically form between two nonmetals.",
+     "tags": "chemistry"},
+
+    {"type": "suffix",
+     "part": "-ology",
+     "a": "the study of",
+     "decompose": [("-log-", "word, reason (from Greek *logos*)"),
+                   ("-y", "noun-forming suffix")],
+     "ex": [
+         "geo + -ology → geology (the study of the earth)",
+         "bi/o + -ology → biology (the study of life)",
+     ],
+     "tags": "etymology"},
+
+    {"type": "key_list",
+     "q": "What are the five French mother sauces?",
+     "items": [
+         ("Béchamel", "a white sauce made from a butter-and-flour roux plus milk."),
+         ("Velouté", "a light stock-based sauce thickened with a roux."),
+         ("Espagnole", "a brown sauce built on a dark roux and beef stock."),
+         ("Tomato", "a sauce built from tomatoes, aromatics, and stock."),
+         ("Hollandaise", "an emulsion of egg yolk and butter, acidified with lemon or vinegar."),
+     ],
+     "note": "Codified by chef Auguste Escoffier; nearly every classical "
+             "French sauce derives from one of the five.",
+     "tags": "cooking"},
+
+    {"type": "deconstruction",
+     "term": "photograph",
+     "a": "An image recorded by the action of light.",
+     "parts": [
+         ("phot/o", "light"),
+         ("-graph", "something written or recorded"),
+     ],
+     "pron": "/FOH-toh-graf/",
+     "tags": "etymology"},
+
+    {"type": "argument",
+     "q": "Reconstruct the classic syllogism establishing Socrates is mortal.",
+     "premises": ["All men are mortal.", "Socrates is a man."],
+     "conclusion": "Socrates is mortal.",
+     "note": "A valid deductive form: if both premises are true, the "
+             "conclusion must be true.",
+     "tags": "logic law"},
+
+    {"type": "word_building",
+     "clue": "the study of life",
+     "term": "biology",
+     "parts": [("bi/o", "life"), ("-logy", "study of")],
+     "tags": "etymology"},
+
+    {"type": "position",
+     "thinker": "Nicolaus Copernicus",
+     "topic": "the structure of the solar system",
+     "a": "The Sun, not the Earth, sits at the center, with the planets "
+          "— including Earth — orbiting it.",
+     "detail": "Published in *De revolutionibus orbium coelestium* (1543), "
+               "overturning the geocentric model that had dominated since Ptolemy.",
+     "tags": "astronomy"},
+
+    {"type": "word_family",
+     "root": "phon/o",
+     "members": [
+         ("telephone", "a device for transmitting sound across distance"),
+         ("symphony", "a sounding-together; a large-scale orchestral work"),
+         ("phonetics", "the study of speech sounds"),
+         ("megaphone", "a device that amplifies (makes 'large') the voice"),
+     ],
+     "tags": "etymology"},
+
+    {"type": "objection",
+     "claim": "A contract requires nothing more than an offer and an "
+              "acceptance to be enforceable.",
+     "objection": "Without *consideration* — something of value "
+                  "exchanged by each party — a promise is generally not "
+                  "legally binding.",
+     "reply": "Courts will enforce a bare promise only under narrow "
+              "exceptions, such as promissory estoppel, where one party "
+              "reasonably relied on it to their detriment.",
+     "tags": "law"},
+
+    {"type": "in_context",
+     "q": "A commit message says a function was made *idempotent*. What does "
+          "that mean, and why would a commit call it out?",
+     "excerpt": "fix: make retry handler idempotent so repeated webhook "
+                "deliveries don't double-charge",
+     "a": "An idempotent operation produces the same result no matter how "
+          "many times it's applied.",
+     "detail": "Callouts like this matter because webhooks, network "
+               "retries, and at-least-once delivery systems can invoke a "
+               "handler more than once for the same event.",
+     "tags": "programming"},
+
+    {"type": "structure_function",
+     "q": "Describe a *flying buttress* and what it does.",
+     "a": "An arched, external stone support that channels the outward "
+          "thrust of a high vaulted ceiling down and away from the walls to "
+          "a pier planted in the ground.",
+     "ex": "Flying buttresses let Gothic cathedrals like Notre-Dame de Paris "
+           "carry taller walls with thinner stone and far larger windows "
+           "than earlier Romanesque buildings allowed.",
+     "tags": "architecture"},
+
+    {"type": "distinction",
+     "between": ("affect", "effect"),
+     "criterion": "Word class is the dividing line: *affect* is (almost "
+                  "always) the verb, *effect* is (almost always) the noun.",
+     "items": [
+         ("affect", "verb — to influence something (e.g. 'the noise "
+                    "affected his focus')."),
+         ("effect", "noun — a result (e.g. 'the noise had no effect')."),
+     ],
+     "note": "Rare exceptions exist ('effect' as a verb meaning to bring "
+             "about; 'affect' as a noun in psychology), but the verb/noun "
+             "split covers nearly all everyday use.",
+     "tags": "linguistics"},
 
     {"type": "true_false",
-     "q": "A *symptom* is an objective finding observed by the examiner.",
-     "verdict": False,
-     "a": "That describes a *sign*. A *symptom* is subjective — it is what the "
-          "patient feels and reports (pain, fatigue, nausea), not what the "
-          "examiner measures (fever, rash, hyperglycemia)."},
-
-    {"type": "true_false",
-     "q": "*Tachycardia* describes a fast heart rate.",
+     "q": "A solution with a pH of 3 is more acidic than a solution with a pH of 5.",
      "verdict": True,
-     "a": "*tachy-* = fast. The trap is the look-alike *brady-* (slow): "
-          "bradycardia is a pulse under 60, tachycardia is over 100."},
+     "a": "The pH scale is logarithmic and runs opposite acidity's "
+          "magnitude: lower pH means a higher concentration of H+ ions, "
+          "i.e. more acidic. A pH of 3 is ten times more acidic than a pH "
+          "of 4, and 100 times more acidic than a pH of 5.",
+     "tags": "chemistry"},
+
+    {"type": "alias",
+     "q": "What is the common name for the star *Alpha Ursae Minoris*?",
+     "a": "Polaris (the North Star).",
+     "detail": "It sits almost exactly above Earth's rotational axis, so it "
+               "appears nearly motionless in the night sky while other "
+               "stars wheel around it.",
+     "tags": "astronomy"},
 ]
 
 
@@ -1067,37 +1151,50 @@ def validate_deck(path, expected_cards=None):
         fails.append("first line is not '#separator:tab'")
     if lines[1] != "#html:true":
         fails.append("second line is not '#html:true'")
+    if len(lines) < 3 or lines[2] != "#tags column:3":
+        fails.append("third line is not '#tags column:3'")
 
     if expected_cards is not None and len(body) != expected_cards:
         fails.append("expected %d card lines, got %d" % (expected_cards, len(body)))
 
+    # front/back text scanned by the regex checks below (tags column excluded)
+    fb_chunks = []
+
     for i, l in enumerate(body, 1):
-        if l.count("\t") != 1:
-            fails.append("card %d has %d tabs (expected exactly 1)" % (i, l.count("\t")))
+        if l.count("\t") != 2:
+            fails.append("card %d has %d tabs (expected exactly 2)" % (i, l.count("\t")))
+            continue
+        fr, bk, tags_field = l.split("\t")
+        fb_chunks.append(fr)
+        fb_chunks.append(bk)
+        if not tags_field:
+            fails.append("card %d has an empty tags field" % i)
+        else:
+            if "  " in tags_field:
+                fails.append("card %d tags field has a double space" % i)
+            if tags_field != tags_field.strip():
+                fails.append("card %d tags field has leading/trailing space" % i)
+        if "border-left:3px solid" not in bk:
+            fails.append("card %d back is not inside a callout box" % i)
 
-    for i, l in enumerate(lines, 1):
+    fb_text = "\n".join(fb_chunks)
+
+    for l in fb_chunks:
         if l.endswith(";"):
-            fails.append("line %d ends with a semicolon" % i)
+            fails.append("a front/back field ends with a semicolon")
 
-    if "<br><br>" in text:
+    if "<br><br>" in fb_text:
         fails.append("found a double <br><br>")
 
-    for tok in re.findall(r"#([0-9a-fA-F]+)", text):
+    for tok in re.findall(r"#([0-9a-fA-F]+)", fb_text):
         if len(tok) not in (6, 8):
             fails.append("hex #%s has length %d (expected 6 or 8)" % (tok, len(tok)))
 
     for tag in ("div", "span", "i", "b"):
-        opens = len(re.findall(r"<" + tag + r"(?:\s|>)", text))
-        closes = len(re.findall(r"</" + tag + r">", text))
+        opens = len(re.findall(r"<" + tag + r"(?:\s|>)", fb_text))
+        closes = len(re.findall(r"</" + tag + r">", fb_text))
         if opens != closes:
             fails.append("unbalanced <%s>: %d open vs %d close" % (tag, opens, closes))
-
-    for i, l in enumerate(body, 1):
-        if "\t" not in l:
-            continue  # missing tab already reported by the tab-count check
-        back_html = l.split("\t", 1)[1]
-        if "border-left:3px solid" not in back_html:
-            fails.append("card %d back is not inside a callout box" % i)
 
     return fails
 
@@ -1109,7 +1206,7 @@ _self_check = validate_deck
 def _run_sample(out):
     """Build the sample deck and self-check it. Returns an exit code."""
     import sys
-    build_deck(SAMPLE_CARDS, out)
+    build_deck(SAMPLE_CARDS, out, tags=["sample"])
     problems = validate_deck(out, expected_cards=len(SAMPLE_CARDS))
     if problems:
         print("SELF-CHECK FAILED:")
@@ -1129,7 +1226,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Anki template engine: build the sample deck, "
                     "validate a deck file, or list card types.")
-    parser.add_argument("output", nargs="?", default="medical_terminology_sample.txt",
+    parser.add_argument("output", nargs="?", default="sample_deck.txt",
                         help="output path for the sample deck (default: %(default)s)")
     parser.add_argument("--validate", metavar="PATH",
                         help="validate an existing deck file and exit")

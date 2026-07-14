@@ -1,4 +1,12 @@
-> Version: 2026-07-03
+> Version: 2026-07-13
+
+## What Anki is for
+
+Anki is the **cold-recall layer**: material that must be known without thinking — facts, names, classifications, word parts, values, pairings. Its input is usually a list the user already has and has already decided to memorize ("here are the drugs for the unit 5 exam — a card for each").
+
+Anki is **not** the place for conceptual understanding, multi-step reasoning, or integrating ideas across sources. That work happens elsewhere. A card that can't be graded right-or-wrong in one beat does not belong here, no matter how important the idea is.
+
+The default posture is therefore **narrow, not thorough**. When the user supplies a list, generate cards for the items on it. Do not expand scope, do not pad toward coverage, and do not add items the user didn't ask for. If the material seems to warrant more cards than the user asked for, say so and ask — don't just generate them.
 
 ## Creating Anki Flashcards
 
@@ -14,13 +22,27 @@ anki_templates.py owns all card styling and structure and is the single source o
 
 Use the categories the engine defines — check it to see which exist and what content fields each accepts. If the material needs a missing category, add a builder to the engine rather than hand-rolling HTML, then use it. Keep one label and casing per category; don't introduce variants.
 
+Two categories worth noting by name: `in_context` (badge IN CONTEXT, field `excerpt`) is for a term encountered inside a real artifact — a chart note, a commit message, a case excerpt, a passage. `alias` (badge ALIAS) is for one thing with two names: generic/brand, common/scientific, English/Latin, symbol/name.
+
 ### True/false cards
 
-Proactively add `true_false` cards wherever the material has a trap: look-alike or easily-swapped word parts (hyper- vs hypo-, inter- vs intra-), common misconceptions, or claims that are almost-but-not-quite right. Front: a single assertion that gives nothing away. Verdict: True/False. Explanation: focus on why the other answer is wrong — usually more illuminating than restating the obvious.
+Trap cards are the one place the engine may add cards beyond the user's list, and only when the list itself contains a genuine trap: a look-alike or easily-swapped pair (hyper- vs hypo-, inter- vs intra-), a common misconception, or a claim that is almost-but-not-quite right. They drill the user's list harder; they do not expand it. **Ask before adding them** if the user didn't request them.
+
+Front: a single assertion that gives nothing away. Verdict: True/False. Explanation: focus on why the other answer is wrong — usually more illuminating than restating the obvious.
+
+### Tags
+
+Every batch must be tagged. Tags have three axes:
+
+- **Subject** (required) — e.g. `rust`, `medterm`, `ethics`.
+- **Purpose** — what the cards are for, e.g. `unit-5-exam`, `final`.
+- **Source** — what they were generated from, e.g. `lecture-12`, `openstax-ch7`.
+
+Tags are kebab-case, lowercase, no spaces. If the user hasn't said what to tag with, ask a one-line follow-up — a mis-tagged or untagged batch is expensive to fix after import.
 
 ### Output
 
-The engine emits a tab-separated .txt with `#separator:tab` and `#html:true` headers and no trailing semicolons.
+The engine emits a tab-separated .txt with `#separator:tab`, `#html:true`, and `#tags column:3` headers and no trailing semicolons. Each card line is `front<TAB>back<TAB>tags`, where `tags` is a space-separated list of tag strings.
 
 Write every generated batch to the project's `outbox/` folder, inside a date-prefixed batch folder (e.g. `outbox/2026-07-03-resp-meds/`). Never write generated files anywhere else, and never read `outbox/` contents as context. Batches are ephemeral: once imported into Anki, the batch folder is deleted.
 
@@ -33,17 +55,11 @@ Generate a batch by authoring a driver script (a small Python file that builds t
 - Don't wrap answers in outer quotation marks; remove stray or doubled quotes. Emphasize key terms with the engine's accent-italics helper, not quotes.
 - When extending an existing series, keep existing questions' wording stable: Anki matches imports on the first field, so stable wording means re-imports update notes instead of duplicating them.
 
-### Expert & orientation questions
+### Choosing a card's shape
 
-Every subject has recurring question forms that experts ask about it (from *What Smart Students Know*, Adam Robinson). Information that answers one of these is the highest-priority card content — "the most popular test questions." Substitute the term being studied for **X**.
+When the user gives a list of items without specifying what the card should ask, these are the shapes a card can take. Pick the one the material best supports — usually one card per item, occasionally two if the item genuinely has two distinct things worth knowing cold. This is a menu to choose from, **not a checklist to complete**. Never generate a card for every question form.
 
-**How to apply when generating cards:**
-
-- For each key term or concept, generate cards answering the five orientation questions plus the applicable subject-type expert questions — but only where the source material actually supplies an answer. Never pad or invent to complete the checklist.
-- Prioritize: facts answering an expert or orientation question are medium-to-high priority; facts answering neither are usually low priority.
-- Prefer card fronts phrased as the expert/orientation question itself, with the term substituted (e.g., "What process causes X?", "How can X be identified?").
-
-**Orientation questions** (universal — default coverage checklist for any major term):
+**Orientation questions** (substitute the term being studied for **X**):
 
 1. What's the definition of X?
 2. What's an example of X?
@@ -51,9 +67,7 @@ Every subject has recurring question forms that experts ask about it (from *What
 4. What is X related to?
 5. What can X be compared with?
 
-**Expert questions by subject type** — map the forms to the domain's equivalents (e.g., "what process causes X" ≈ mechanism or etiology; "found with or near X" ≈ structural relations, associations, co-occurrences):
-
-*Type I — fact-based subjects* (large bodies of information to identify, classify, and explain):
+**Expert questions** (fact-based subjects — large bodies of information to identify, classify, and explain):
 
 - What is X made of?
 - What are X's chemical, physical, and structural properties?
@@ -64,36 +78,3 @@ Every subject has recurring question forms that experts ask about it (from *What
 - What else is usually found with or near X?
 - What processes can cause X to change, and in what ways?
 - What can I tell about the history of X?
-
-*Type II — interpretation subjects* (works and texts to analyze; meaning, argument, personal response). These have many more expert questions than Type I. For literature, by category:
-
-- **Character:** major and minor characters, roles and relationships; what each wants vs. truly needs; external and internal obstacles; stakes and risks each will accept; how much choice each has and their obligations; how each changes and what each learns; how we learn about them (actions, dialogue, thoughts).
-- **Plot:** the initial event that sets the major character in pursuit of the goal; major plot points and how they tie together; chronological or not, and why; how obstacles escalate; subplots and their relation to the main plot; inevitability vs. destiny and chance; major conflicts; complete reversals of fortune.
-- **Setting:** where and when it takes place, and whether that matters to the story.
-- **Point of view:** whose POV and why; how it shapes what we know; what we know that the characters don't.
-- **Theme:** the major theme; other themes; the overall moral or message.
-- **Style:** meaning conveyed directly (description, narration) vs. indirectly (symbol, metaphor, irony, allegory, subtext); word choice and sentence structure; recurring images or symbols; contrasts and parallels.
-- **Work as a whole:** genre and how representative of it; significance of the title; what it tells us about its time, the time depicted, our time; why this medium.
-- **Author:** comparison with the author's other works; how other authors treated similar themes; whether the author identifies with any character; influence of the times; who influenced them and whom they influenced; traits that would identify other work by this author.
-
-For non-literature Type II material, derive analogues — e.g., for argument-driven texts: What is the thesis? What is the argument for it? What are the strongest objections and replies? What does the position imply in concrete cases? How does it compare with rival positions?
-
-*Type III — problem-solving subjects* (techniques over information; quantitative and symbolic material). While learning a concept or worked technique:
-
-- What would I guess the answer or result should be?
-- What is each step of the solution accomplishing?
-- What's the pattern here?
-- If this changes, what else will change?
-- What happens at the extremes?
-- Can I generalize this result?
-- What are the special cases?
-- How can this question be rephrased?
-- What are the essential features of this problem?
-- What other types of problems or techniques does this remind me of?
-- How many different ways can I solve this problem?
-- Can I derive the formula?
-- How can I make this concept more tangible?
-
-When solving on a test: What does this problem remind me of? What do I already know (givens, unknown, candidate equations)? How can I picture this?
-
-**Deriving expert questions for a new subject:** textbooks don't list them. Scan the textbook introduction and especially chapter-summary/review questions; ignore the specifics and look for recurring general forms. A question form that recurs across chapters is an expert question.

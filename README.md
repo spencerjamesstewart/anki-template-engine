@@ -2,6 +2,10 @@
 
 A zero-dependency (stdlib-only) Python module that turns compact card dicts
 into a styled, tab-separated Anki import file via `build_deck(cards, output_path)`.
+Output has three columns — front, back, and tags — with a `#tags column:3`
+header. Every card must carry at least one tag (the subject); pass deck-wide
+tags via `build_deck(cards, "deck.txt", tags=["rust", "unit-5-exam"])`,
+merged with any per-card tags.
 
 ## Deployment model
 
