@@ -1,4 +1,4 @@
-> Version: 2026-07-13
+> Version: 2026-07-14
 
 ## What Anki is for
 
@@ -7,6 +7,29 @@ Anki is the **cold-recall layer**: material that must be known without thinking 
 Anki is **not** the place for conceptual understanding, multi-step reasoning, or integrating ideas across sources. That work happens elsewhere. A card that can't be graded right-or-wrong in one beat does not belong here, no matter how important the idea is.
 
 The default posture is therefore **narrow, not thorough**. When the user supplies a list, generate cards for the items on it. Do not expand scope, do not pad toward coverage, and do not add items the user didn't ask for. If the material seems to warrant more cards than the user asked for, say so and ask — don't just generate them.
+
+### The test for a card
+
+**Reconstructible vs. arbitrary.** A fact earns a card only if it must be
+*retrieved*, not if it can be *reconstructed*. If it follows from something the
+learner already knows — a drug's effects follow from its class, a term's meaning
+follows from its word parts — it does not need a card. It needs thinking, and it
+will be learned as a byproduct of thinking. Card the arbitrary instead: brand
+names, conventional classifications, cutoff values, pairings with no internal
+logic. Nobody derives "Lopressor" from first principles; that is exactly what
+spaced repetition is for.
+
+**Why.** A fact drilled to automaticity is retrieved for free and stops consuming
+working memory — which is the bottleneck in reasoning. That is Anki's whole
+contribution: it clears the desk so the hard thinking has room. A card that
+carries reasoning inside it defeats this twice, since it neither automates
+anything nor is it the place that reasoning should be happening.
+
+**Keep fronts bare.** A complex card teaches its own shape: after enough reviews
+the learner recognizes the card rather than knowing the fact. Brevity is the
+defense. Prefer fronts that give nothing away and answers of a few words. If an
+answer runs to a full sentence, the fact is probably reconstructible (drop it) or
+non-atomic (split it).
 
 ## Creating Anki Flashcards
 
