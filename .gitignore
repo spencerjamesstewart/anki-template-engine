@@ -3,3 +3,4 @@
 medical_terminology_sample.txt
 __pycache__/
 .memory-updates
+outbox/

@@ -1,4 +1,4 @@
-> Version: 2026-07-14
+> Version: 2026-07-15
 
 ## What Anki is for
 
@@ -67,7 +67,7 @@ Tags are kebab-case, lowercase, no spaces. If the user hasn't said what to tag w
 
 The engine emits a tab-separated .txt with `#separator:tab`, `#html:true`, and `#tags column:3` headers and no trailing semicolons. Each card line is `front<TAB>back<TAB>tags`, where `tags` is a space-separated list of tag strings.
 
-Write every generated batch to the single Anki Cowork folder's `outbox/` folder — there is now one Anki project covering all subjects, not one per subject — inside a batch folder named `outbox/YYYY-MM-DD-<subject>-<slug>/` (e.g. `outbox/2026-07-13-pharm-unit-5/`). Never write generated files anywhere else, and never read `outbox/` contents as context. Batches are ephemeral: once imported into Anki, the batch folder is deleted. Nothing is written into the engine repo — drivers and decks live in the batch folder.
+Write every generated batch to an `outbox/` directory under the invoking/working directory (`pwd/outbox/`) — inside a batch folder named `outbox/YYYY-MM-DD-<subject>-<slug>/` (e.g. `outbox/2026-07-13-pharm-unit-5/`). Never write generated files anywhere else, and never read `outbox/` contents as context. Batches are ephemeral: once imported into Anki, the batch folder is deleted. Nothing is written into the engine repo — drivers and decks live in the batch folder.
 
 Generate a batch by authoring a driver script (a small Python file that builds the card list and calls `build_deck`) in the batch folder and running `./run.sh gen <driver>` — never by invoking the engine or the driver directly.
 
