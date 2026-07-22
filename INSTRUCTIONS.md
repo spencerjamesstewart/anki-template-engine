@@ -1,4 +1,4 @@
-> Version: 2026-07-15
+> Version: 2026-07-22
 
 ## What Anki is for
 
@@ -63,11 +63,17 @@ Every batch must be tagged. Tags have three axes:
 
 Tags are kebab-case, lowercase, no spaces. If the user hasn't said what to tag with, ask a one-line follow-up — a mis-tagged or untagged batch is expensive to fix after import.
 
+### Input files
+
+Source material (glossaries, lecture notes, whatever the driver reads) goes in the gitignored `input/` folder at the repo root. A driver must declare every source it reads by calling `register_input(path)` from `anki_templates.py` before opening it: it prints the `Input: <abspath>` contract line `run.sh` uses to track what a run consumed, returns the absolute path to open, and raises if the file is missing or was already archived.
+
+After a `./run.sh gen` run in which every deck validates, the inputs that run declared are auto-moved to `input/archive/<batch-name>/` — this prevents accidentally regenerating the same batch from the same source. To deliberately regenerate, move the file back into `input/`. A declared file that lives outside `input/` is left in place and just gets a note in the run output; it is never archived.
+
 ### Output
 
 The engine emits a tab-separated .txt with `#separator:tab`, `#html:true`, and `#tags column:3` headers and no trailing semicolons. Each card line is `front<TAB>back<TAB>tags`, where `tags` is a space-separated list of tag strings.
 
-Write every generated batch to an `outbox/` directory under the invoking/working directory (`pwd/outbox/`) — inside a batch folder named `outbox/YYYY-MM-DD-<subject>-<slug>/` (e.g. `outbox/2026-07-13-pharm-unit-5/`). Never write generated files anywhere else, and never read `outbox/` contents as context. Batches are ephemeral: once imported into Anki, the batch folder is deleted. Nothing is written into the engine repo — drivers and decks live in the batch folder.
+The repo is the working directory: `input/` and `outbox/` both live in it, both gitignored. Write every generated batch to `outbox/`, inside a batch folder named `outbox/YYYY-MM-DD-<subject>-<slug>/` (e.g. `outbox/2026-07-13-pharm-unit-5/`). Never write generated files anywhere else, and never read `outbox/` contents as context. Batches are ephemeral: once imported into Anki, the batch folder is deleted. A driver lives in its batch folder, or at the repo root (committed) if it's reusable across runs.
 
 Generate a batch by authoring a driver script (a small Python file that builds the card list and calls `build_deck`) in the batch folder and running `./run.sh gen <driver>` — never by invoking the engine or the driver directly.
 

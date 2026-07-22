@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Driver: builds three medical-terminology decks (word parts, abbreviations,
-eponyms) from glossary-cleaned.txt and abbreviations-cleaned.txt.
+eponyms) from input/glossary-cleaned.txt and input/abbreviations-cleaned.txt.
 
 Run via: ./run.sh gen gen_medterm.py   (or `python3 gen_medterm.py` directly
 from the repo root).
@@ -8,14 +8,14 @@ from the repo root).
 import os
 import sys
 
-from anki_templates import build_deck
+from anki_templates import build_deck, register_input
 
 REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 OUTDIR = os.path.join(REPO_ROOT, "outbox",
                        "2026-07-15-medical-terminology-language-of-medicine")
 
-GLOSSARY_PATH = os.path.join(REPO_ROOT, "glossary-cleaned.txt")
-ABBREV_PATH = os.path.join(REPO_ROOT, "abbreviations-cleaned.txt")
+GLOSSARY_PATH = os.path.join(REPO_ROOT, "input", "glossary-cleaned.txt")
+ABBREV_PATH = os.path.join(REPO_ROOT, "input", "abbreviations-cleaned.txt")
 
 COMMON_TAGS = ["medical-terminology", "the-language-of-medicine-glossary"]
 
@@ -297,11 +297,14 @@ def dedupe_across_decks(deck_lists):
 
 
 def main():
+    glossary_path = register_input(GLOSSARY_PATH)
+    abbrev_path = register_input(ABBREV_PATH)
+
     os.makedirs(OUTDIR, exist_ok=True)
 
-    word_part_cards = parse_glossary(GLOSSARY_PATH)
+    word_part_cards = parse_glossary(glossary_path)
 
-    sections = parse_abbrev_sections(ABBREV_PATH)
+    sections = parse_abbrev_sections(abbrev_path)
     abbrev_entries = build_abbreviation_entries(sections)
     abbrev_cards = merge_abbreviation_entries(abbrev_entries)
 

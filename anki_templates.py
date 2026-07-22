@@ -45,6 +45,7 @@ work too.) Do NOT use double asterisks (**) — only single.
 Every builder's accepted fields are documented in its own docstring.
 """
 
+import os
 import re
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -949,6 +950,29 @@ def build_deck(cards, output_path, tags=None):
         f.write("\n".join(lines) + "\n")
     print("Generated %d cards -> %s" % (len(cards), output_path))
     return output_path
+
+
+def register_input(path):
+    """Declare a source file the driver reads. Prints the ``Input: <abspath>``
+    contract line run.sh uses to archive consumed inputs after a fully
+    successful gen run, and returns the absolute path for the driver to open."""
+    abspath = os.path.abspath(path)
+    if os.path.isfile(abspath):
+        print("Input: %s" % abspath)
+        return abspath
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    archive_root = os.path.join(repo_root, "input", "archive")
+    basename = os.path.basename(abspath)
+    if os.path.isdir(archive_root):
+        for dirpath, dirnames, filenames in os.walk(archive_root):
+            dirnames.sort()  # deterministic first match
+            if basename in filenames:
+                archived = os.path.relpath(os.path.join(dirpath, basename), repo_root)
+                raise FileNotFoundError(
+                    "input file %r was already used to generate a batch and "
+                    "moved to %s; move it back to input/ to regenerate."
+                    % (basename, archived))
+    raise FileNotFoundError("input file not found: %s" % abspath)
 
 
 # ───────────────────────────────────────────────────────────────────────────
