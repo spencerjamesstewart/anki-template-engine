@@ -37,3 +37,28 @@ python3 anki_templates.py --list-types    # list available card types
 See [INSTRUCTIONS.md](INSTRUCTIONS.md) for the universal card-authoring rules.
 Its `> Version:` date is bumped on any meaningful content change, so downstream
 batches can reference which instruction version produced them.
+
+## Q:/A: source files
+
+`anp_qa.py` is a shared driver for source files written as `Q:`/`A:` blocks with
+`# CHAPTER N` banner lines (the OpenStax review-question format). It parses the
+blocks, HTML-escapes them, applies a per-batch override table, runs its
+self-checks — card count, Q/A pairing, chapter coverage, every override key
+matching exactly one question, no duplicate fronts — and calls `build_deck`.
+Each check aborts the run rather than warning, since a silently dropped card is
+invisible after import.
+
+A batch driver using it is just an override table plus one call:
+
+```python
+from anp_qa import generate
+
+OVERRIDES = {"What is X?": {"type": "key_list", "items": [...]}, ...}
+
+if __name__ == "__main__":
+    generate(__file__, "source.txt", "deck.txt", OVERRIDES,
+             expected_count=124, chapters=(7, 8, 9))
+```
+
+Cards default to `definition`; `OVERRIDES` is keyed on exact question text, so a
+mis-typed key aborts instead of silently leaving a card mis-typed.
