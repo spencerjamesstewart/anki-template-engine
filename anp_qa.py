@@ -1,7 +1,8 @@
 """Shared driver for OpenStax-style Q:/A: block input files.
 
-Parses `Q: ... A: ...` flashcard blocks (with '# CHAPTER N' banner lines
-marking chapter boundaries) into card dicts for anki_templates.build_deck,
+Parses `Q: ... A: ...` flashcard blocks (with '# CHAPTER N' or '# UNIT N'
+banner lines marking chapter boundaries) into card dicts for
+anki_templates.build_deck,
 applies a per-driver OVERRIDES table, runs the self-checks, and writes the
 deck. Extracted from gen_anp_ch4_6.py / gen_anp.py, which were byte-identical
 apart from the source path, output path, expected card count, and chapter
@@ -14,7 +15,7 @@ from collections import Counter
 
 from anki_templates import build_deck, register_input
 
-_CHAPTER_RE = re.compile(r"^#\s*CHAPTER\s+(\d+)\b")
+_CHAPTER_RE = re.compile(r"^#\s*(?:CHAPTER|UNIT)\s+(\d+)\b")
 
 
 def _clean(s):
