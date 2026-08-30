@@ -162,11 +162,12 @@ def generate(driver_file, src_name, out_name, overrides,
     cards = []
     for q, a, chapter in raw_cards:
         # self-check 3: every card must land in a known chapter
-        if chapter not in chapters:
+        # (skipped when chapters is None: no chapter structure)
+        if chapters is not None and chapter not in chapters:
             sys.exit("ERROR: question %r has no valid chapter (got %r)."
                       % (q, chapter))
-        base = {"type": "definition", "q": q, "a": a,
-                "tags": [chapter_tag_fmt % chapter]}
+        tags = [chapter_tag_fmt % chapter] if chapters is not None else []
+        base = {"type": "definition", "q": q, "a": a, "tags": tags}
         if q in overrides:
             base = apply_override(base, overrides[q])
         cards.append(escape_card(base))
