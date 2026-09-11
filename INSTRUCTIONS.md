@@ -1,4 +1,4 @@
-> Version: 2026-07-22
+> Version: 2026-09-11
 
 ## What Anki is for
 
@@ -65,7 +65,9 @@ Tags are kebab-case, lowercase, no spaces. If the user hasn't said what to tag w
 
 ### Input files
 
-Source material (glossaries, lecture notes, whatever the driver reads) goes in the gitignored `input/` folder at the repo root. A driver must declare every source it reads by calling `register_input(path)` from `anki_templates.py` before opening it: it prints the `Input: <abspath>` contract line `run.sh` uses to track what a run consumed, returns the absolute path to open, and raises if the file is missing or was already archived.
+The normal input is a cards file — an `anki-cards/1` JSON file of card dicts written by anki-flashcard-generator (see README.md for the format). It goes in the gitignored `input/` folder at the repo root and is built with `./run.sh gen input/<name>.json`, which writes `outbox/<date>-<name>/<name>.txt`, validates it, and archives the cards file. Cards files are plain text: no HTML in any field — the engine escapes on load.
+
+Source material for a driver (glossaries, tables) goes in `input/` too. A driver must declare every source it reads by calling `register_input(path)` from `anki_templates.py` before opening it: it prints the `Input: <abspath>` contract line `run.sh` uses to track what a run consumed, returns the absolute path to open, and raises if the file is missing or was already archived.
 
 After a `./run.sh gen` run in which every deck validates, the inputs that run declared are auto-moved to `input/archive/<batch-name>/` — this prevents accidentally regenerating the same batch from the same source. To deliberately regenerate, move the file back into `input/`. A declared file that lives outside `input/` is left in place and just gets a note in the run output; it is never archived.
 
@@ -75,7 +77,7 @@ The engine emits a tab-separated .txt with `#separator:tab`, `#html:true`, and `
 
 The repo is the working directory: `input/` and `outbox/` both live in it, both gitignored. Write every generated batch to `outbox/`, inside a batch folder named `outbox/YYYY-MM-DD-<subject>-<slug>/` (e.g. `outbox/2026-07-13-pharm-unit-5/`). Never write generated files anywhere else, and never read `outbox/` contents as context. Batches are ephemeral: once imported into Anki, the batch folder is deleted. A driver lives in its batch folder, or at the repo root (committed) if it's reusable across runs.
 
-Generate a batch by authoring a driver script (a small Python file that builds the card list and calls `build_deck`) in the batch folder and running `./run.sh gen <driver>` — never by invoking the engine or the driver directly.
+Generate a batch with `./run.sh gen <cards.json>`. A driver script (a small Python file that builds the card list and calls `build_deck`) is the fallback for material that is not LLM-generated; run it the same way, `./run.sh gen <driver>` — never by invoking the engine or the driver directly. Every card is checked against the engine's `CARD_FIELDS` before it is built: a missing required field or a field the type doesn't render is an error, not a silent drop.
 
 ### Content conventions
 
