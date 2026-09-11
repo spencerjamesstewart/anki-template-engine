@@ -23,6 +23,14 @@ USAGE
 Tags are required: every card must end up with at least one tag, either
 per-card or via the deck-wide `tags=` argument to `build_deck`.
 
+The normal input path is a JSON file in the anki-cards/1 format written by
+anki-flashcard-generator (see load_cards):
+
+    python3 anki_templates.py --build cards.json -o deck.txt
+
+Every card is checked against CARD_FIELDS (required and rendered fields per
+type) before it is built, and build_deck refuses duplicate fronts.
+
 CARD CATEGORIES
 ---------------
 The CATEGORIES dict below is the source of truth for card types (badge label +
@@ -504,13 +512,13 @@ def card_key_list(d):
 
 def card_word_part(d, _category="combining_form"):
     """Word-part card (serves combining_form / prefix / suffix).
-    Fields: part (or term), a (meaning), q?, detail?, decompose?[(tok,mean)...],
+    Fields: part, a (meaning), q?, detail?, decompose?[(tok,mean)...],
     pron?, ex?, related?, note?  |  badge?, color? override.
     'decompose' splits a compound element into root + base parts
     (e.g. -emia -> -em- 'blood' + -ia 'condition')."""
     a = _accent(d, _category)
     badge = _badge(d, _category)
-    part = d.get("part") or d.get("term") or ""
+    part = d.get("part", "")
     if d.get("q"):
         q_inner = markup(d["q"], a)
     else:
@@ -655,9 +663,8 @@ def card_true_false(d):
     Fields:
       q        the statement to judge (shown alone on the front).
       verdict  True or False  (bool, or the string 'true'/'false').
-               'answer' is accepted as an alias.
       a        the explanation — focus on WHY the other answer is wrong / the
-               subtlety being tested. 'explain' is accepted as an alias.
+               subtlety being tested.
       detail?, ex?, note?  optional, as in other builders.
       badge?, color?       override the FRONT badge only.
 
@@ -665,13 +672,10 @@ def card_true_false(d):
     back leads with a TRUE (green) or FALSE (red) verdict banner, then a 'Why'
     explanation colored to match the verdict. Verdict colors are fixed; the
     per-card 'color' override only affects the front badge."""
-    if "verdict" not in d and "answer" not in d:
-        raise ValueError("true_false card requires a 'verdict' (True/False)")
-
     front_accent = _accent(d, "true_false")
     fr = front(_badge(d, "true_false"), front_accent, markup(d["q"], front_accent))
 
-    raw = d.get("verdict", d.get("answer"))
+    raw = d["verdict"]
     if isinstance(raw, str):
         is_true = raw.strip().lower() in ("true", "t", "yes", "y", "1")
     else:
@@ -687,11 +691,9 @@ def card_true_false(d):
     )
     parts = [banner]
 
-    src = d if "a" in d else ({**d, "a": d["explain"]} if d.get("explain") else d)
-    lead, body = _lead_body(src)
-    if lead:
-        parts.append(section_label("Why", vc))
-        parts.append(answer_callout(lead, vc, body))
+    lead, body = _lead_body(d)
+    parts.append(section_label("Why", vc))
+    parts.append(answer_callout(lead, vc, body))
     if d.get("ex"):
         parts.append(example_box(d["ex"], vc))
     if d.get("note"):
@@ -872,13 +874,82 @@ _BUILDERS = {
 }
 
 
-def build_card(card):
-    """Route a card dict to its builder on the 'type' key. Returns (front, back)."""
+# ───────────────────────────────────────────────────────────────────────────
+# INPUT SCHEMA  (the contract every card dict is checked against)
+# ───────────────────────────────────────────────────────────────────────────
+# type -> (required fields, optional fields). 'type', 'tags', 'badge' and
+# 'color' are accepted on every card. A card with a missing required field or
+# a field its builder would ignore is rejected by build_card — an unknown field
+# is a mis-typed card, and a silently dropped field is invisible after import.
+_COMMON_OPTIONAL = ("tags", "badge", "color")
+_QA = (("q", "a"), ("detail", "ex", "note"))
+_WORD_PART = (("part", "a"), ("q", "detail", "decompose", "pron", "ex", "related", "note"))
+
+CARD_FIELDS = {
+    "definition":         _QA,
+    "concept":            _QA,
+    "structure_function": _QA,
+    "alias":              _QA,
+    "compare":            (("q",), ("items", "a", "points", "ex", "note")),
+    "key_list":           (("q", "items"), ("a", "ordered", "ex", "note")),
+    "true_false":         (("q", "verdict", "a"), ("detail", "ex", "note")),
+    "combining_form":     _WORD_PART,
+    "prefix":             _WORD_PART,
+    "suffix":             _WORD_PART,
+    "deconstruction":     (("term", "parts"), ("a", "q", "pron", "ex", "note")),
+    "word_building":      (("clue", "term"), ("parts", "pron", "note")),
+    "word_family":        (("root", "members"), ("q", "note")),
+    "in_context":         (("q", "a"), ("detail", "excerpt", "related", "ex", "note")),
+    "argument":           (("q", "premises", "conclusion"), ("ex", "note")),
+    "position":           (("thinker", "a"), ("topic", "q", "detail", "ex", "note")),
+    "objection":          (("objection",), ("claim", "q", "reply", "ex", "note")),
+    "distinction":        ((), ("q", "between", "criterion", "items", "ex", "note")),
+}
+
+# Types whose front comes from one of several fields: at least one is required.
+_ONE_OF = {
+    "compare":     ("items", "a"),
+    "objection":   ("claim", "q"),
+    "distinction": ("between", "q"),
+}
+
+
+def check_card(card):
+    """Validate a card dict against CARD_FIELDS. Raises ValueError naming the
+    card (by its front text) and the problem."""
+    if not isinstance(card, dict):
+        raise ValueError("card is not a dict: %r" % (card,))
     t = card.get("type")
-    if t not in _BUILDERS:
+    if t not in CARD_FIELDS:
         raise ValueError("Unknown card type %r. Valid types: %s"
-                         % (t, ", ".join(sorted(_BUILDERS))))
-    return _BUILDERS[t](card)
+                         % (t, ", ".join(sorted(CARD_FIELDS))))
+    required, optional = CARD_FIELDS[t]
+    who = _card_name(card)
+    for k in required:
+        if card.get(k) in (None, "", [], ()):
+            raise ValueError("%s card %s is missing required field %r" % (t, who, k))
+    if t in _ONE_OF and not any(card.get(k) for k in _ONE_OF[t]):
+        raise ValueError("%s card %s needs one of %s"
+                         % (t, who, " / ".join(repr(k) for k in _ONE_OF[t])))
+    allowed = set(("type",) + required + optional + _COMMON_OPTIONAL)
+    unknown = sorted(k for k in card if k not in allowed)
+    if unknown:
+        raise ValueError("%s card %s has field(s) %s the %s builder does not render"
+                         % (t, who, ", ".join(repr(k) for k in unknown), t))
+
+
+def _card_name(card):
+    for k in ("q", "part", "term", "root", "clue", "claim", "thinker"):
+        if card.get(k):
+            return repr(str(card[k])[:60])
+    return "#?"
+
+
+def build_card(card):
+    """Route a card dict to its builder on the 'type' key. Returns (front, back).
+    The card is checked against CARD_FIELDS first."""
+    check_card(card)
+    return _BUILDERS[card["type"]](card)
 
 
 def _oneline(s):
@@ -935,17 +1006,27 @@ def build_deck(cards, output_path, tags=None):
 
     Every card must end up with at least one tag (deck-wide and/or
     per-card); tags may not contain whitespace and are lowercased.
+
+    Raises ValueError on a card that fails check_card, has no tags, or
+    renders the same front as an earlier card (Anki matches imports on the
+    first field, so a duplicate front would silently overwrite a note).
     """
     deck_tags = _normalize_tags(tags)
     lines = ["#separator:tab", "#html:true", "#tags column:3"]
-    for card in cards:
+    seen_fronts = {}
+    for i, card in enumerate(cards, 1):
         fr, bk = build_card(card)
         card_tags = _normalize_tags(card.get("tags"))
         merged = _merge_tags(deck_tags, card_tags)
         if not merged:
-            raise ValueError("card of type %r has no tags (deck-wide or "
-                             "per-card tags required)" % card.get("type"))
-        lines.append(_oneline(fr) + "\t" + _oneline(bk) + "\t" + " ".join(merged))
+            raise ValueError("card %d %s has no tags (deck-wide or per-card "
+                             "tags required)" % (i, _card_name(card)))
+        front_line = _oneline(fr)
+        if front_line in seen_fronts:
+            raise ValueError("card %d duplicates the front of card %d: %s"
+                             % (i, seen_fronts[front_line], _card_name(card)))
+        seen_fronts[front_line] = i
+        lines.append(front_line + "\t" + _oneline(bk) + "\t" + " ".join(merged))
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     print("Generated %d cards -> %s" % (len(cards), output_path))
@@ -973,6 +1054,60 @@ def register_input(path):
                     "moved to %s; move it back to input/ to regenerate."
                     % (basename, archived))
     raise FileNotFoundError("input file not found: %s" % abspath)
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# JSON INPUT  (the one normalized format; written by anki-flashcard-generator)
+# ───────────────────────────────────────────────────────────────────────────
+# {"format": "anki-cards/1", "course": "...", "tags": [...], "cards": [...]}
+# Every card is a plain-text card dict exactly as build_deck takes it. Text is
+# HTML-escaped here (& < >), so the file never contains markup; *accent*
+# markup is untouched because it is not HTML.
+JSON_FORMAT = "anki-cards/1"
+_NO_ESCAPE = {"type", "tags", "badge", "color", "verdict", "ordered"}
+
+
+def _esc(s):
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _esc_value(v):
+    """Recursively HTML-escape the strings in a field value (a string, or a
+    list of strings and/or [label, desc] pairs)."""
+    if isinstance(v, str):
+        return _esc(v)
+    if isinstance(v, (list, tuple)):
+        return [_esc_value(x) for x in v]
+    return v
+
+
+def load_cards(path):
+    """Read an anki-cards/1 JSON file. Returns (cards, deck_tags): the card
+    dicts with their text fields HTML-escaped, and the deck-wide tags.
+    Raises ValueError on a file that is not in the format."""
+    import json
+    with open(path, encoding="utf-8") as f:
+        doc = json.load(f)
+    if not isinstance(doc, dict) or doc.get("format") != JSON_FORMAT:
+        raise ValueError("%s: expected a JSON object with \"format\": %r"
+                         % (path, JSON_FORMAT))
+    cards = doc.get("cards")
+    if not isinstance(cards, list) or not cards:
+        raise ValueError("%s: \"cards\" must be a non-empty list" % path)
+    out = []
+    for card in cards:
+        if not isinstance(card, dict):
+            raise ValueError("%s: card is not an object: %r" % (path, card))
+        out.append({k: (v if k in _NO_ESCAPE else _esc_value(v))
+                    for k, v in card.items()})
+    return out, list(doc.get("tags") or [])
+
+
+def build_from_json(json_path, output_path):
+    """register_input the JSON, load it, build the deck. Returns output_path."""
+    src = register_input(json_path)
+    cards, deck_tags = load_cards(src)
+    return build_deck(cards, output_path, tags=deck_tags)
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -1223,10 +1358,6 @@ def validate_deck(path, expected_cards=None):
     return fails
 
 
-# Backwards-compatible alias (pre-CLI name).
-_self_check = validate_deck
-
-
 def _run_sample(out):
     """Build the sample deck and self-check it. Returns an exit code."""
     import sys
@@ -1248,10 +1379,15 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(
-        description="Anki template engine: build the sample deck, "
-                    "validate a deck file, or list card types.")
+        description="Anki template engine: build a deck from an anki-cards/1 "
+                    "JSON file, build the sample deck, validate a deck file, "
+                    "or list card types.")
     parser.add_argument("output", nargs="?", default="sample_deck.txt",
                         help="output path for the sample deck (default: %(default)s)")
+    parser.add_argument("--build", metavar="CARDS.json",
+                        help="build a deck from a JSON cards file (see load_cards)")
+    parser.add_argument("-o", "--out", metavar="DECK.txt",
+                        help="output path for --build (default: the JSON's name with .txt)")
     parser.add_argument("--validate", metavar="PATH",
                         help="validate an existing deck file and exit")
     parser.add_argument("--list-types", action="store_true",
@@ -1261,6 +1397,15 @@ if __name__ == "__main__":
     if args.list_types:
         for key in CATEGORIES:
             print(key)
+        sys.exit(0)
+
+    if args.build:
+        out = args.out or os.path.splitext(args.build)[0] + ".txt"
+        try:
+            build_from_json(args.build, out)
+        except (ValueError, FileNotFoundError) as e:
+            print("BUILD FAILED: %s" % e, file=sys.stderr)
+            sys.exit(1)
         sys.exit(0)
 
     if args.validate:
