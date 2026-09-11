@@ -62,3 +62,8 @@ if __name__ == "__main__":
 
 Cards default to `definition`; `OVERRIDES` is keyed on exact question text, so a
 mis-typed key aborts instead of silently leaving a card mis-typed.
+
+A source file may open with an optional `tags:` header line (ignored, since
+deck tags come from the driver's `deck_tags` argument), and an answer may
+contain one `<br><br>` to split a short answer from a longer aside, which
+carries through as the card's `detail`/`note`.

@@ -7,6 +7,12 @@ applies a per-driver OVERRIDES table, runs the self-checks, and writes the
 deck. Extracted from gen_anp_ch4_6.py / gen_anp.py, which were byte-identical
 apart from the source path, output path, expected card count, and chapter
 range.
+
+An input file may start with an optional 'tags: ...' header line; it is
+ignored (deck tags come from the driver's deck_tags argument instead). An
+answer may also contain '<br><br>' once, splitting it into a short answer
+(`a`) and a longer 'Additional info:' aside (`detail`); the latter is folded
+into `note` for card types that don't render `detail` (see generate()).
 """
 import os
 import re
@@ -46,12 +52,31 @@ def _esc_value(v):
 
 # ─── Parsing ──────────────────────────────────────────────────────────────────
 
+_INFO_PREFIX_RE = re.compile(r"^additional info:\s*", re.IGNORECASE)
+
+
+def _split_answer(a_text):
+    """Split an answer on the first '<br><br>': text before -> (a, detail).
+    detail has an optional leading 'Additional info:' prefix (case-
+    insensitive) and surrounding whitespace stripped; both parts are run
+    through _clean. detail is None when there is no '<br><br>'."""
+    if "<br><br>" not in a_text:
+        return _clean(a_text), None
+    a_part, detail_part = a_text.split("<br><br>", 1)
+    detail_part = _INFO_PREFIX_RE.sub("", detail_part.strip())
+    return _clean(a_part), _clean(detail_part)
+
+
 def parse_flashcards(path):
-    """Parse Q:/A: blocks into (q, a, chapter) tuples, in source order.
-    Chapter banner lines ('# CHAPTER N ...') update the current chapter;
-    all other '#' lines and blank lines are ignored. A Q: line with no
+    """Parse Q:/A: blocks into (q, a, detail, chapter) tuples, in source
+    order. Chapter banner lines ('# CHAPTER N ...') update the current
+    chapter; all other '#' lines and blank lines are ignored. An optional
+    'tags: ...' header line (case-insensitive) is skipped with a stderr
+    note; deck tags come from the driver instead. A Q: line with no
     intervening non-comment/non-blank line before the next A: line is
-    paired with it; anything else is a parse error."""
+    paired with it; anything else is a parse error. An answer containing
+    '<br><br>' is split into a short answer and a 'detail' aside (see
+    _split_answer)."""
     with open(path, encoding="utf-8") as f:
         lines = f.read().split("\n")
 
@@ -63,6 +88,10 @@ def parse_flashcards(path):
     for lineno, raw in enumerate(lines, 1):
         s = raw.strip()
         if s == "":
+            continue
+        if s.lower().startswith("tags:"):
+            print("note: ignoring 'tags:' header line %d (deck tags come "
+                  "from the driver's deck_tags)" % lineno, file=sys.stderr)
             continue
         if s.startswith("#"):
             m = _CHAPTER_RE.match(s)
@@ -80,13 +109,13 @@ def parse_flashcards(path):
             if pending_q is None:
                 sys.exit("ERROR: line %d: stray 'A: %s' with no preceding 'Q:'."
                           % (lineno, s[3:]))
-            a_text = _clean(s[3:])
-            cards.append((pending_q, a_text, pending_chapter))
+            a_text, detail = _split_answer(s[3:])
+            cards.append((pending_q, a_text, detail, pending_chapter))
             pending_q = None
             pending_chapter = None
             continue
-        sys.exit("ERROR: line %d: unrecognized line (not Q:, A:, blank, or "
-                  "comment): %r" % (lineno, raw))
+        sys.exit("ERROR: line %d: unrecognized line (not Q:, A:, blank, "
+                  "comment, or 'tags:' header): %r" % (lineno, raw))
 
     if pending_q is not None:
         sys.exit("ERROR: end of file: 'Q: %s' has no matching 'A:'." % pending_q)
@@ -150,7 +179,7 @@ def generate(driver_file, src_name, out_name, overrides,
         sys.exit("ERROR: parsed %d cards, expected %d." % (len(raw_cards), expected_count))
 
     # self-check 4: every OVERRIDES key must match exactly one real question
-    q_counts = Counter(q for q, _a, _ch in raw_cards)
+    q_counts = Counter(q for q, _a, _detail, _ch in raw_cards)
     bad_keys = [(key, q_counts.get(key, 0)) for key in overrides
                 if q_counts.get(key, 0) != 1]
     if bad_keys:
@@ -160,7 +189,7 @@ def generate(driver_file, src_name, out_name, overrides,
         sys.exit(1)
 
     cards = []
-    for q, a, chapter in raw_cards:
+    for q, a, detail, chapter in raw_cards:
         # self-check 3: every card must land in a known chapter
         # (skipped when chapters is None: no chapter structure)
         if chapters is not None and chapter not in chapters:
@@ -168,9 +197,27 @@ def generate(driver_file, src_name, out_name, overrides,
                       % (q, chapter))
         tags = [chapter_tag_fmt % chapter] if chapters is not None else []
         base = {"type": "definition", "q": q, "a": a, "tags": tags}
+        if detail:
+            base["detail"] = detail
         if q in overrides:
             base = apply_override(base, overrides[q])
-        cards.append(escape_card(base))
+
+        card = escape_card(base)
+
+        # card_key_list ignores 'detail' outright, and so does card_compare
+        # in its side-by-side mode (items of (label, desc) pairs). Move
+        # detail -> note there so the extra text stays visible instead of
+        # silently being dropped by the builder. Done after escape_card,
+        # which escapes 'detail' but not 'note'.
+        items = card.get("items") or []
+        is_pairwise_compare = (card.get("type") == "compare" and items and
+                                all(isinstance(it, (tuple, list)) and len(it) == 2
+                                    for it in items))
+        if (card.get("type") == "key_list" or is_pairwise_compare) \
+                and card.get("detail") and not card.get("note"):
+            card["note"] = card.pop("detail")
+
+        cards.append(card)
 
     # self-check 5: no duplicate fronts
     seen = {}
