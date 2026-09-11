@@ -1,5 +1,5 @@
 #!/bin/bash
-# Entry point for Cowork sessions. Subcommands: gen <driver.py> | validate <deck.txt> | sample
+# Entry point for Cowork sessions. Subcommands: gen <cards.json | driver.py> | validate <deck.txt> | sample
 set -euo pipefail
 
 # Remember where the caller invoked us from: relative arguments (driver paths)
@@ -12,6 +12,8 @@ usage() {
 Usage: ./run.sh <subcommand>
 
 Subcommands:
+  gen <cards.json>    Build a deck from a cards file into outbox/<date>-<name>/,
+                      validate it, archive the cards file.
   gen <driver.py>     Run a batch driver, validate every deck it wrote.
   validate <deck.txt> Validate a generated deck file.
   sample              Build the sample deck and self-check it.
@@ -27,7 +29,7 @@ cmd="${1:-}"
 case "$cmd" in
     gen)
         if [ $# -lt 2 ]; then
-            echo "ERROR: gen needs a driver script: ./run.sh gen <driver.py>" >&2
+            echo "ERROR: gen needs a cards file or driver: ./run.sh gen <cards.json | driver.py>" >&2
             exit 1
         fi
         driver="$2"
@@ -36,7 +38,7 @@ case "$cmd" in
             *) driver="$caller_pwd/$driver" ;;
         esac
         if [ ! -f "$driver" ]; then
-            echo "ERROR: driver not found: $driver" >&2
+            echo "ERROR: file not found: $driver" >&2
             exit 1
         fi
         driver_dir="$(cd "$(dirname "$driver")" && pwd)"
@@ -44,15 +46,32 @@ case "$cmd" in
         repo_root="$(pwd)"
         mkdir -p input/archive
 
-        echo "Running driver $driver..."
         driver_out="$(mktemp)"
         trap 'rm -f "$driver_out"' EXIT
-        # The driver runs in its own directory so relative output paths land in
-        # the batch folder; PYTHONPATH lets it `import anki_templates` directly.
-        if ! (cd "$driver_dir" && PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" python3 "$driver") | tee "$driver_out"; then
-            echo "ERROR: driver exited nonzero." >&2
-            exit 1
-        fi
+        case "$driver" in
+            *.json)
+                # A cards file (anki-cards/1, from anki-flashcard-generator):
+                # build it into outbox/<date>-<name>/<name>.txt.
+                name="$(basename "$driver" .json)"
+                batch_dir="$repo_root/outbox/$(date +%Y-%m-%d)-$name"
+                mkdir -p "$batch_dir"
+                driver_dir="$batch_dir"
+                echo "Building $driver -> $batch_dir/$name.txt..."
+                if ! python3 anki_templates.py --build "$driver" -o "$batch_dir/$name.txt" | tee "$driver_out"; then
+                    echo "ERROR: build failed." >&2
+                    exit 1
+                fi
+                ;;
+            *)
+                echo "Running driver $driver..."
+                # The driver runs in its own directory so relative output paths land in
+                # the batch folder; PYTHONPATH lets it `import anki_templates` directly.
+                if ! (cd "$driver_dir" && PYTHONPATH="$repo_root${PYTHONPATH:+:$PYTHONPATH}" python3 "$driver") | tee "$driver_out"; then
+                    echo "ERROR: driver exited nonzero." >&2
+                    exit 1
+                fi
+                ;;
+        esac
 
         # build_deck prints "Generated <N> cards -> <path>" per deck written;
         # that line is the contract for discovering the driver's outputs.
