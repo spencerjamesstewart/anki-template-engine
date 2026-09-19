@@ -11,3 +11,7 @@ __pycache__/
 
 # Secrets
 .env
+
+# macOS / local Claude Code settings
+.DS_Store
+.claude/settings.local.json
