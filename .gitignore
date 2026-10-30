@@ -7,7 +7,6 @@ input/
 outbox/
 sample_deck.txt
 __pycache__/
-.memory-updates
 
 # Secrets
 .env
