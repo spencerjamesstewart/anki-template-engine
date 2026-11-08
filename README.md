@@ -58,7 +58,7 @@ the engine's accent markup, not HTML, and pass through). `[label, desc]`
 pairs are plain two-element lists.
 
 ```
-python3 flashgen.py ... -o ~/Documents/CodeRepos/anki-template-engine/input/enzymes.json
+python3 flashgen.py ... -o ~/CodeRepos/anki/anki-template-engine/input/enzymes.json
 ./run.sh gen input/enzymes.json     # -> outbox/2026-09-11-enzymes/enzymes.txt
 ```
 
